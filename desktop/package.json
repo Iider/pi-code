@@ -1,0 +1,15 @@
+{
+  "name": "pi-code-desktop",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Tauri desktop shell for pi-code (kimi WebUI on the pi coding agent)",
+  "scripts": {
+    "sidecar": "bash build-sidecar.sh",
+    "tauri": "tauri",
+    "dev": "npm run sidecar && tauri dev",
+    "build": "npm run sidecar && tauri build"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.11.4"
+  }
+}
