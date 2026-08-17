@@ -1,7 +1,6 @@
 <!-- apps/kimi-web/src/components/ui/Kbd.vue -->
-<!-- Design-system §03 Kbd: keyboard shortcut rendered as keycaps — one <kbd>
-     block per key (e.g. ['⌘', 'K'] renders two caps). Keycap look: sunken
-     surface + 2px bottom border, 18px tall to match Badge sm. -->
+<!-- Design-system §03 Kbd: keyboard shortcut rendered as quiet outlined
+     keycaps — one <kbd> block per key (e.g. ['⌘', 'K'] renders two caps). -->
 <script setup lang="ts">
 defineProps<{
   keys: string[];
@@ -28,11 +27,10 @@ defineProps<{
   min-width: 18px;
   height: 18px;
   padding: 0 5px;
-  border: 1px solid var(--color-line);
-  border-bottom-width: 2px;
+  border: 0.5px solid var(--color-line);
   border-radius: var(--radius-xs);
-  background: var(--color-surface-sunken);
-  color: var(--color-text-muted);
+  background: transparent;
+  color: inherit;
   font-family: var(--font-ui);
   font-size: 11px;
   line-height: 1;

@@ -32,7 +32,7 @@ async function main(): Promise<void> {
   const approvalPolicy: ApprovalPolicy = (argValue('approvals') as ApprovalPolicy) ?? 'dangerous';
   const bypassAuth = hasFlag('dangerous-bypass-auth') || process.env['PI_CODE_BYPASS_AUTH'] === '1';
   const noOpen = hasFlag('no-open');
-  const webDist = resolve(argValue('web-dist') ?? join(here, '..', '..', 'webapp', 'dist'));
+  const webDist = resolve(argValue('web-dist') ?? join(here, '..', '..', 'webui', 'dist'));
 
   const bridge = new PiBridge({ workspaceRoot, approvalPolicy });
   await bridge.init();
@@ -58,7 +58,7 @@ async function main(): Promise<void> {
     });
   } else {
     console.warn(`[pi-code] webapp dist not found at ${webDist} — serving API only.`);
-    console.warn('[pi-code] build the front end with:  cd webapp && npm install && npm run build');
+    console.warn('[pi-code] restore the bundled WebUI under webui/dist or pass --web-dist explicitly');
   }
 
   attachWebSocket(app, bridge, token, bypassAuth);

@@ -42,8 +42,8 @@ export function usePageTitle({ running, showAuthGate }: UsePageTitleOptions): vo
 
   const pageTitle = computed<string>(() => {
     const prefix = running.value ? `${SPINNER_FRAMES[spinnerFrame.value]} ` : '';
-    if (showAuthGate.value) return `${prefix}${t('app.authPageTitle')} - Kimi Code Web`;
-    return `${prefix}Kimi Code Web`;
+    if (showAuthGate.value) return `${prefix}${t('app.authPageTitle')} - Pi Code`;
+    return `${prefix}Pi Code`;
   });
   watchEffect(() => {
     if (typeof document !== 'undefined') document.title = pageTitle.value;

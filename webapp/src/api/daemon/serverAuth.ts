@@ -2,9 +2,9 @@
 // Minimal server-transport credential store for the Web UI.
 //
 // The local server now requires a bearer credential on every non-bypass API
-// and WebSocket call (the persistent server token, or the KIMI_CODE_PASSWORD
+// and WebSocket call (the persistent server token, or the PI_CODE_TOKEN
 // password). The Web UI obtains that credential in one of two ways:
-//   1. From the URL fragment (`#token=<...>`) that `kimi web` appends when it
+//   1. From the URL fragment (`#token=<...>`) that Pi Code appends when it
 //      opens the browser — read once at boot, then scrubbed from the URL so it
 //      does not linger in history or screenshots.
 //   2. From a token the user types into the ServerAuthDialog modal.
@@ -12,8 +12,8 @@
 // The credential is held in memory and mirrored to localStorage for up to 7
 // days so it survives tab close and browser restarts without becoming a
 // permanent browser-profile secret. The token is already persisted server-side
-// at <KIMI_CODE_HOME>/server.token and handed to the browser in the launch URL.
-// `kimi web rotate-token` invalidates a stale copy, and the next 401 clears
+// at <PI_CODE_HOME>/server.token and handed to the browser in the launch URL.
+// Rotating the server token invalidates a stale copy, and the next 401 clears
 // it here.
 
 const STORAGE_KEY = 'kimi-web.server-credential';
@@ -241,7 +241,7 @@ export function clearCredential(): void {
     // Only clear the persisted copy when it still holds the credential this
     // tab was using. localStorage is shared across tabs, so an unconditional
     // removal would let a stale tab erase a newer token another tab stored
-    // (e.g. right after `kimi web rotate-token`).
+    // (e.g. right after a server token rotation).
     const raw = globalThis.localStorage?.getItem(STORAGE_KEY);
     const stored = raw === null || raw === undefined
       ? undefined

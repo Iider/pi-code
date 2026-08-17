@@ -18,7 +18,7 @@ export default {
   delete: 'Delete',
   refreshTitle: 'Refresh {type}',
   deleteTitle: 'Delete {type}',
-  loginKimi: 'Sign in to Kimi',
+  loginKimi: 'Connect provider',
   loginAnthropic: 'Sign in to Anthropic',
   enterApiKey: 'Enter API Key',
   fieldType: 'Type',

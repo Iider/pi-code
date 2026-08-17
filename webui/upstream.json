@@ -1,0 +1,6 @@
+{
+  "repository": "https://github.com/MoonshotAI/kimi-code",
+  "revision": "f492cd7c9",
+  "source": "apps/kimi-code/dist-web",
+  "license": "MIT"
+}

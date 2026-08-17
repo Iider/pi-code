@@ -253,6 +253,7 @@ function onHeaderDragStart(event: DragEvent): void {
 }
 .gh:active { cursor: grabbing; }
 .gh:hover { background: var(--sb-hover, var(--color-surface-sunken)); }
+.gh.on { background: var(--color-selected); }
 .gh-top {
   position: relative;
   display: flex;

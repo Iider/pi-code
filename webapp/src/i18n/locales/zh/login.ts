@@ -1,5 +1,5 @@
 export default {
-  title: '登录 Kimi Code',
+  title: '连接 pi Provider',
   close: '关闭 (Esc)',
   starting: '正在启动授权流程…',
   lead: '点击下方按钮，在新标签页中完成授权。',
@@ -18,7 +18,7 @@ export default {
   retry: '重试',
   closeBtn: '关闭',
   errorTitle: '当前 daemon 暂不支持登录',
-  errorHint: '请升级 kimi-code 后重试',
+  errorHint: '请升级 pi agent 后重试',
   pollErrorTitle: '与 daemon 的连接已断开',
-  pollErrorHint: '授权轮询连续失败，请检查 kimi-code 进程后重试',
+  pollErrorHint: '授权轮询连续失败，请检查 Pi Code 服务后重试',
 } as const;

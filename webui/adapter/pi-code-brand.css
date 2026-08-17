@@ -1,0 +1,73 @@
+/* Pi Code's deliberately small product-brand layer.
+ *
+ * Layout, controls, motion, and interaction remain the upstream WebUI's own
+ * implementation. Only the two mascot surfaces are replaced here because the
+ * upstream source is not published with the distributable bundle.
+ */
+
+.ch-brand .ch-logo {
+  display: none;
+}
+
+.ch-brand::before {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 20px;
+  border-radius: 6px;
+  background: var(--logo);
+  color: var(--color-text-on-accent);
+  content: "π";
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 15px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.wiz-step > .brand-logo {
+  display: none;
+}
+
+.wiz-step::before {
+  display: grid;
+  place-items: center;
+  width: 68px;
+  height: 46px;
+  border-radius: 12px;
+  background: var(--logo);
+  color: var(--color-text-on-accent);
+  content: "π";
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 32px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.doodle-host.empty-doodle {
+  display: grid;
+  place-items: center;
+  min-width: 340px;
+  min-height: 152px;
+}
+
+.doodle-host.empty-doodle .doodle-canvas {
+  display: none;
+}
+
+.doodle-host.empty-doodle::after {
+  color: var(--color-text);
+  content: "PI CODE";
+  font-family: var(--font-ui);
+  font-size: clamp(42px, 5vw, 64px);
+  font-weight: var(--weight-semibold);
+  letter-spacing: 0.16em;
+  line-height: 1;
+  text-indent: 0.16em;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .doodle-host.empty-doodle {
+    min-width: min(340px, 80vw);
+  }
+}

@@ -41,8 +41,8 @@ function onKeydown(e: KeyboardEvent): void {
       <div class="server-auth-head">
         <h1 id="server-auth-title" class="server-auth-title">Server token required</h1>
         <p class="server-auth-hint">
-          This server is protected. Enter the bearer token printed when the server
-          started (or the password set via <code>KIMI_CODE_PASSWORD</code>).
+          This Pi Code server is protected. Enter the bearer token stored in
+          <code>~/.pi-code/server.token</code> or supplied through <code>PI_CODE_TOKEN</code>.
         </p>
       </div>
       <div class="server-auth-body">

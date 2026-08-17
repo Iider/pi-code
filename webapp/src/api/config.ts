@@ -29,7 +29,7 @@ export function readKimiApiConfig(): KimiApiConfig {
 //  - dev: the SPA is served by Vite; the Vite dev proxy forwards /v1, /healthz
 //    and /v1/ws to the server (see vite.config.ts), so the browser only ever
 //    talks to its own origin.
-//  - prod: `kimi web` serves this built SPA from the server itself, so the
+//  - prod: the Pi Code server serves this built SPA itself, so the
 //    server's origin already is the API origin.
 // Set VITE_KIMI_SERVER_HTTP_URL to connect directly to an absolute server
 // origin instead (that path does require the server to send CORS headers).

@@ -325,7 +325,7 @@ describe('cross-tab credential clearing', () => {
   it('keeps a newer token another tab persisted when this tab is stale', async () => {
     const auth = await loadAuth();
     auth.setCredential('stale-tok');
-    // Another tab stores a fresh token (e.g. after rotation + `kimi web`).
+    // Another tab stores a fresh token (e.g. after a server token rotation).
     writeStoredCredential('fresh-tok');
     const freshStored = localStore.getItem(STORAGE_KEY);
 

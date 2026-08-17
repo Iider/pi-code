@@ -5,7 +5,7 @@ import { isDesktop } from '../lib/desktopFlag';
 
 const { t } = useI18n();
 
-// True only inside the Kimi Desktop app (see desktopFlag.ts). Renders a small
+// True only inside the Pi Code desktop app (see desktopFlag.ts). Renders a small
 // tag pinned to the app's bottom-right corner (positioned by App.vue).
 const show = isDesktop;
 </script>

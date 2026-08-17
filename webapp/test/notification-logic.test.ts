@@ -102,46 +102,46 @@ describe('notification copy', () => {
 
   it('uses an event title and session-title body for completion notifications', () => {
     expect(completionNotificationCopy('Refactor auth flow')).toEqual({
-      title: 'Kimi Code · Turn finished',
+      title: 'Pi Code · Turn finished',
       body: 'Refactor auth flow',
     });
   });
 
   it('falls back to a result hint when there is no session title', () => {
     expect(completionNotificationCopy('  ')).toEqual({
-      title: 'Kimi Code · Turn finished',
+      title: 'Pi Code · Turn finished',
       body: 'View result',
     });
   });
 
   it('prefers the question preview in question notifications', () => {
     expect(questionNotificationCopy('Storage migration', 'Which database?')).toEqual({
-      title: 'Kimi Code · Needs answer',
+      title: 'Pi Code · Needs answer',
       body: 'Which database?',
     });
   });
 
   it('falls back to the session title before the generic question line', () => {
     expect(questionNotificationCopy('Storage migration', ' ')).toEqual({
-      title: 'Kimi Code · Needs answer',
+      title: 'Pi Code · Needs answer',
       body: 'Storage migration',
     });
   });
 
   it('uses tool name in approval notifications', () => {
     expect(approvalNotificationCopy('Refactor auth flow', 'bash')).toEqual({
-      title: 'Kimi Code · Approval required',
+      title: 'Pi Code · Approval required',
       body: 'bash',
     });
   });
 
   it('falls back to session title and then generic approval line', () => {
     expect(approvalNotificationCopy('Refactor auth flow', ' ')).toEqual({
-      title: 'Kimi Code · Approval required',
+      title: 'Pi Code · Approval required',
       body: 'Refactor auth flow',
     });
     expect(approvalNotificationCopy('  ', '  ')).toEqual({
-      title: 'Kimi Code · Approval required',
+      title: 'Pi Code · Approval required',
       body: 'A tool needs your approval',
     });
   });
@@ -149,7 +149,7 @@ describe('notification copy', () => {
   it('localizes approval notification copy', () => {
     i18n.global.locale.value = 'zh';
     expect(approvalNotificationCopy('', '')).toEqual({
-      title: 'Kimi Code · 等待审批',
+      title: 'Pi Code · 等待审批',
       body: '有工具等待你审批',
     });
   });
@@ -158,11 +158,11 @@ describe('notification copy', () => {
     i18n.global.locale.value = 'zh';
 
     expect(completionNotificationCopy('')).toEqual({
-      title: 'Kimi Code · 回合完成',
+      title: 'Pi Code · 回合完成',
       body: '点击查看结果',
     });
     expect(questionNotificationCopy('', '')).toEqual({
-      title: 'Kimi Code · 待回答',
+      title: 'Pi Code · 待回答',
       body: '有提问等待你回答',
     });
   });

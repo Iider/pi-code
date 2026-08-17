@@ -3,7 +3,7 @@
 // Detects whether the web UI is running inside the Kimi Desktop app, and on
 // which platform.
 //
-// The desktop app shares the local kimi daemon with the CLI / browser / TUI, so
+// The desktop app shares the local Pi Code server with the CLI / browser / TUI, so
 // the web bundle it displays may be served by an already-running external daemon
 // (not the one bundled inside the app). A purely build-time flag is therefore
 // unreliable. Instead, the desktop app appends `?kimi_desktop=1&platform=<os>`

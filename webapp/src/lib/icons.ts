@@ -32,9 +32,9 @@ import KimiFolderOpen from '~icons/kimi/folder-open';
 import KimiMore from '~icons/kimi/more';
 import KimiSearch from '~icons/kimi/search';
 import KimiSetting from '~icons/kimi/setting';
+import KimiSidebarCollapse from '~icons/kimi/sidebar-collapse';
 
 // Components (Tabler) ---------------------------------------------------------
-import TablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse';
 import TablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand';
 import TablerPaperclip from '~icons/tabler/paperclip';
 
@@ -104,9 +104,9 @@ import RawKimiFolderOpen from '~icons/kimi/folder-open?raw';
 import RawKimiMore from '~icons/kimi/more?raw';
 import RawKimiSearch from '~icons/kimi/search?raw';
 import RawKimiSetting from '~icons/kimi/setting?raw';
+import RawKimiSidebarCollapse from '~icons/kimi/sidebar-collapse?raw';
 
 // Raw SVG strings (Tabler) ----------------------------------------------------
-import RawTablerSidebarLeftCollapse from '~icons/tabler/layout-sidebar-left-collapse?raw';
 import RawTablerSidebarLeftExpand from '~icons/tabler/layout-sidebar-left-expand?raw';
 import RawTablerPaperclip from '~icons/tabler/paperclip?raw';
 
@@ -283,7 +283,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   'arrow-down': entry(RiArrowDownLine, RawArrowDownLine),
   'arrow-right': entry(RiArrowRightLine, RawArrowRightLine),
   minus: entry(RiSubtractLine, RawSubtractLine),
-  'panel-collapse': entry(TablerSidebarLeftCollapse, RawTablerSidebarLeftCollapse),
+  'panel-collapse': entry(KimiSidebarCollapse, RawKimiSidebarCollapse),
   'panel-expand': entry(TablerSidebarLeftExpand, RawTablerSidebarLeftExpand),
   expand: entry(RiExpandDiagonalLine, RawExpandDiagonalLine),
   collapse: entry(RiCollapseDiagonalLine, RawCollapseDiagonalLine),

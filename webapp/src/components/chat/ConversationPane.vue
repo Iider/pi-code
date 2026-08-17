@@ -1314,57 +1314,6 @@ defineExpose({ loadComposerForEdit, focusComposer });
                 <span>{{ starting ? t('conversation.starting') : t('composer.emptyConversationTitle') }}</span>
               </span>
               <span v-if="!starting" class="empty-hint-text">{{ t('composer.emptyConversation') }}</span>
-              <!-- Workspace picker: choose where this new conversation starts.
-                   Hidden while starting — a workspace is already committed. -->
-              <div v-if="hasWorkspaces && !starting" class="ws-pick">
-                <Tooltip :text="t('conversation.switchWorkspace')">
-                  <button type="button" class="ws-pick-btn" @click.stop="wsPickOpen = !wsPickOpen">
-                    <Icon name="folder" size="sm" />
-                    <span class="ws-pick-name">{{ activeWorkspaceLabel }}</span>
-                    <Icon class="ws-pick-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
-                  </button>
-                </Tooltip>
-                <div v-if="wsPickOpen" class="ws-pick-backdrop" @click="wsPickOpen = false" />
-                <div v-if="wsPickOpen" class="ws-pick-menu">
-                  <button
-                    v-for="w in visibleWorkspaces"
-                    :key="w.id"
-                    type="button"
-                    class="ws-pick-item"
-                    :class="{ on: w.id === activeWorkspaceId }"
-                    @click.stop="pickWorkspace(w.id)"
-                  >
-                    <span class="ws-pick-item-name">{{ w.name }}</span>
-                    <span class="ws-pick-item-path">{{ w.shortPath }}</span>
-                  </button>
-                  <button
-                    v-if="hiddenWorkspaceCount > 0"
-                    type="button"
-                    class="ws-pick-item ws-pick-more"
-                    @click.stop="wsPickExpanded = !wsPickExpanded"
-                  >
-                    <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
-                  </button>
-                  <div class="ws-pick-divider" />
-                  <button
-                    type="button"
-                    class="ws-pick-action"
-                    @click.stop="wsPickOpen = false; emit('addWorkspace')"
-                  >
-                    <Icon name="plus" size="sm" />
-                    <span>{{ t('conversation.addWorkspace') }}</span>
-                  </button>
-                </div>
-              </div>
-              <button
-                v-else-if="!starting"
-                type="button"
-                class="empty-add-workspace"
-                @click="emit('addWorkspace')"
-              >
-                <Icon name="folder-plus" size="sm" />
-                <span>{{ t('conversation.addWorkspace') }}</span>
-              </button>
             </div>
             <Composer
               ref="emptyComposerRef"
@@ -1405,6 +1354,39 @@ defineExpose({ loadComposerForEdit, focusComposer });
               @pick-model="emit('pickModel')"
               @select-model="emit('selectModel', $event)"
             />
+            <div v-if="hasWorkspaces && !starting" class="ws-pick">
+              <Tooltip :text="t('conversation.switchWorkspace')">
+                <button type="button" class="ws-pick-btn" @click.stop="wsPickOpen = !wsPickOpen">
+                  <Icon name="folder" size="sm" />
+                  <span class="ws-pick-name">{{ activeWorkspaceLabel }}</span>
+                  <Icon class="ws-pick-chev" :class="{ open: wsPickOpen }" name="chevron-down" size="sm" />
+                </button>
+              </Tooltip>
+              <div v-if="wsPickOpen" class="ws-pick-backdrop" @click="wsPickOpen = false" />
+              <div v-if="wsPickOpen" class="ws-pick-menu">
+                <button v-for="w in visibleWorkspaces" :key="w.id" type="button"
+                  class="ws-pick-item" :class="{ on: w.id === activeWorkspaceId }"
+                  @click.stop="pickWorkspace(w.id)">
+                  <span class="ws-pick-item-name">{{ w.name }}</span>
+                  <span class="ws-pick-item-path">{{ w.shortPath }}</span>
+                </button>
+                <button v-if="hiddenWorkspaceCount > 0" type="button" class="ws-pick-item ws-pick-more"
+                  @click.stop="wsPickExpanded = !wsPickExpanded">
+                  <span>{{ t('conversation.moreWorkspaces', { count: hiddenWorkspaceCount }) }}</span>
+                </button>
+                <div class="ws-pick-divider" />
+                <button type="button" class="ws-pick-action"
+                  @click.stop="wsPickOpen = false; emit('addWorkspace')">
+                  <Icon name="plus" size="sm" />
+                  <span>{{ t('conversation.addWorkspace') }}</span>
+                </button>
+              </div>
+            </div>
+            <button v-else-if="!starting" type="button" class="empty-add-workspace"
+              @click="emit('addWorkspace')">
+              <Icon name="folder-plus" size="sm" />
+              <span>{{ t('conversation.addWorkspace') }}</span>
+            </button>
             <div class="empty-spacer" />
           </template>
           <template v-else>
@@ -1663,6 +1645,13 @@ defineExpose({ loadComposerForEdit, focusComposer });
 /* Empty-composer workspace picker */
 .ws-pick {
   position: relative;
+  width: calc(100% - 32px);
+  min-height: 54px;
+  box-sizing: border-box;
+  margin: -8px 16px 0;
+  padding: 13px 16px;
+  border-radius: 0 0 var(--radius-2xl) var(--radius-2xl);
+  background: var(--color-surface);
   font-family: var(--font-ui);
 }
 .ws-pick-btn {
@@ -1671,16 +1660,16 @@ defineExpose({ loadComposerForEdit, focusComposer });
   gap: 7px;
   width: max-content;
   max-width: min(100%, calc(100vw - var(--space-8)));
-  padding: 5px 10px;
-  background: var(--panel);
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  padding: 5px 4px;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   color: var(--dim);
   font-family: inherit;
   font-size: var(--ui-font-size-sm);
   cursor: pointer;
 }
-.ws-pick-btn:hover { border-color: var(--color-accent-bd); color: var(--color-text); }
+.ws-pick-btn:hover { background: var(--color-hover); color: var(--color-text); }
 .ws-pick-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ws-pick-chev { flex: none; color: var(--muted); transition: transform 0.15s; }
 .ws-pick-chev.open { transform: rotate(180deg); }
@@ -1693,9 +1682,8 @@ defineExpose({ loadComposerForEdit, focusComposer });
   position: absolute;
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  left: 50%;
-  transform: translateX(-50%);
-  top: calc(100% + 6px);
+  left: 16px;
+  bottom: calc(100% + 6px);
   z-index: var(--z-dropdown);
   width: max-content;
   min-width: min(180px, calc(100cqw - var(--space-8)));

@@ -1,23 +1,23 @@
 # pi-code
 
 pi-code 是为 [pi coding agent](https://github.com/earendil-works/pi) 定制的
-Web 与桌面客户端。项目参考 [kimi-code](https://github.com/MoonshotAI/kimi-code)
-WebUI 的视觉设计和交互方式，尽力还原其简洁、流畅的使用体验，但产品能力始终以
-pi agent 为准。
+Web 与桌面客户端。项目复用 [kimi-code](https://github.com/MoonshotAI/kimi-code)
+以 MIT 许可证发布的官方 WebUI 构建产物，保留其页面样式和原生交互，并将产品品牌
+与能力后端替换为 Pi Code / pi agent。
 
 项目不修改 pi agent，也不要求 pi agent 适配 Kimi 的功能模型。服务端通过官方
 `@earendil-works/pi-coding-agent` SDK 与 pi agent 协作，在保持配置、认证、会话和
 运行行为兼容的前提下，将 pi 的原生能力呈现在浏览器和桌面端。
 
-项目的长期目标是完整支持 pi agent 的原始功能：Kimi Code 提供界面与交互设计上的
-参考，pi agent 则是唯一的能力来源和行为标准。新增功能应优先复用 pi 的原生实现，
-不在客户端另造一套与 pi 不一致的概念或行为。
+项目的长期目标是完整支持 pi agent 的原始功能：Kimi Code WebUI 只负责表现与交互，
+pi agent 是唯一的能力来源和行为标准。新增功能应优先复用 pi 的原生实现，不在客户
+端另造一套与 pi 不一致的概念或行为，也不为适配 UI 修改 pi agent。
 
 ```
 ┌─────────────────┐  /api/v1 REST + WS   ┌──────────────────────────┐
-│  webapp/        │◄────────────────────►│  server/                 │
-│  kimi-web (Vue) │   envelope + events  │  Fastify + PiBridge      │
-│  built by Vite  │                      │  → createAgentSession()  │
+│  webui/dist/    │◄────────────────────►│  server/                 │
+│  official WebUI │   envelope + events  │  Fastify + PiBridge      │
+│  + Pi branding  │                      │  → createAgentSession()  │
 └─────────────────┘                      │  → SessionManager        │
                                          │  → beforeToolCall gate   │
                                          └──────────────────────────┘
@@ -26,11 +26,8 @@ pi agent 为准。
 ## Quick start
 
 ```bash
-# 1. front end (build once)
-cd webapp && npm install && npm run build
-
-# 2. server (uses your existing pi auth in ~/.pi/agent/auth.json)
-cd ../server && npm install
+# Server uses the bundled WebUI and your existing pi auth in ~/.pi/agent/auth.json
+cd server && npm install
 npm start                    # opens the browser with the token appended
 ```
 
@@ -54,17 +51,27 @@ npm start -- --port 8765 --workspace /path/to/project --approvals dangerous
 | `--port` | number (default 8765) | HTTP/WS listen port |
 | `--workspace` | path (default cwd) | Root workspace for new sessions |
 | `--approvals` | `dangerous` (default) / `all` / `none` | Tool approval policy: ask for destructive bash commands only / every mutative tool call (bash·write·edit) / never ask |
+| `--web-dist` | path (default `webui/dist`) | Override the WebUI distribution; use `webapp/dist` to run the legacy source build |
 | `--no-open` | — | Do not open the browser |
 | `--dangerous-bypass-auth` | — | Disable the bearer token (local dev only) |
 
 Environment: `PI_CODE_HOME` (default `~/.pi-code`) for the token + session
 metadata.
 
-### Front-end development
+### WebUI snapshots and legacy development
+
+`webui/dist/` is the default, self-contained official WebUI snapshot. Its upstream revision,
+license, constrained brand changes, and repeatable sync command are documented in
+[`webui/UPSTREAM.md`](webui/UPSTREAM.md).
+
+`webapp/` retains the last public Vue source as a rollback and protocol-reference implementation.
+To run it instead:
 
 ```bash
 cd webapp
-KIMI_SERVER_URL=http://127.0.0.1:8765 npm run dev   # Vite dev server + API proxy
+npm install && npm run build
+cd ../server
+npm start -- --web-dist ../webapp/dist
 ```
 
 ## Desktop app (Tauri)
@@ -128,10 +135,10 @@ terminals, skills, plugins, search, export, ask-user questions.
 ## Repository layout
 
 ```
-webapp/   kimi-web front end — extracted from kimi-code @ e7d5a0aee
-          (Vue 3 + Vite; the last revision before the source moved to the
-          private code-app repo). Unmodified except for vitest/ws being
-          dropped from devDependencies.
+webui/    default official Kimi Code WebUI distribution + Pi Code brand layer
+          and upstream sync metadata; no pi agent behavior lives here
+webapp/   legacy Vue source, extracted from kimi-code @ e7d5a0aee; retained as
+          a rollback path and readable protocol/UI reference
 server/   the bridge (this project's own code)
   src/bridge.ts      session registry, event bus, snapshots, prompts
   src/translate.ts   pi events/messages → kimi wire vocabulary
@@ -143,9 +150,14 @@ server/vendor/protocol/  kimi-code's protocol package (reference schemas)
 
 ## Attribution & license
 
-- The webapp is derived from [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)
-  (`apps/kimi-web`, MIT) — restored from the repository's git history at
-  commit `e7d5a0aee74e7f116cca0273c416ece9139a78a0`, 2026-08-05.
+- The default WebUI snapshot comes from
+  [MoonshotAI/kimi-code](https://github.com/MoonshotAI/kimi-code)
+  (`apps/kimi-code/dist-web`, MIT) at the revision recorded in
+  [`webui/upstream.json`](webui/upstream.json). The corresponding license is retained at
+  [`webui/LICENSE.upstream`](webui/LICENSE.upstream).
+- The legacy Vue source was restored from the repository's history at
+  `e7d5a0aee74e7f116cca0273c416ece9139a78a0`, the last public revision before the WebUI
+  source moved to the private `code-app` repository.
 - The API contract mirrors kimi-code's `kap-server` + `packages/protocol`
   (MIT). Colon-bearing routes are registered with kap-server's double-colon
   convention (`/fs::browse` serves `/fs:browse` on the wire).

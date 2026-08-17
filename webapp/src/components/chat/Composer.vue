@@ -969,7 +969,14 @@ function selectModel(modelId: string): void {
             @click.stop="togglePermDropdown"
             @keydown.enter="togglePermDropdown"
             @keydown.space.prevent="togglePermDropdown"
-          >{{ permLabel }}</span>
+          >
+            <Icon
+              class="perm-pill-icon"
+              :name="status.permission === 'auto' ? 'alert-triangle' : status.permission === 'yolo' ? 'sparkles' : 'check-list'"
+              size="sm"
+            />
+            <span class="perm-pill-label">{{ permLabel }}</span>
+          </span>
 
           <!-- Permission dropdown — anchored to the toolbar left side -->
           <div
@@ -1277,15 +1284,12 @@ function selectModel(modelId: string): void {
   --composer-send-inset: var(--space-2);
   position: relative;
   border: 1px solid var(--line);
-  border-radius: var(--radius-xl);
+  border-radius: var(--radius-composer);
   background: var(--bg);
   box-shadow: var(--shadow-md);
   transition: border-color 0.15s, box-shadow 0.15s;
 }
-.composer-card:focus-within {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-md), 0 0 0 3px var(--color-accent-soft);
-}
+.composer-card:focus-within { border-color: var(--color-line-strong); }
 
 
 
@@ -1404,7 +1408,7 @@ function selectModel(modelId: string): void {
   font-family: var(--font-ui);
   font-size: var(--content-font-size);
   background: transparent;
-  min-height: 36px;
+  min-height: 63px;
   max-height: calc(100vh / 4);
   overflow-y: auto;
   line-height: 1.5;
@@ -1538,7 +1542,7 @@ function selectModel(modelId: string): void {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px var(--composer-send-inset) var(--composer-send-inset);
+  padding: var(--space-1) var(--composer-send-inset) var(--composer-send-inset);
   position: relative;
 }
 
@@ -1555,7 +1559,7 @@ function selectModel(modelId: string): void {
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: var(--space-1);
   min-width: 0;
   overflow: hidden;
 }
@@ -1565,15 +1569,27 @@ function selectModel(modelId: string): void {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 2px 7px;
-  border-radius: 6px;
-  font-size: var(--ui-font-size);
+  width: 32px;
+  height: 32px;
+  justify-content: center;
+  padding: 0;
+  border-radius: var(--radius-full);
+  font-size: var(--ui-font-size-sm);
   color: var(--color-text);
   cursor: pointer;
   user-select: none;
   transition: background 0.1s, color 0.15s;
   font-family: var(--font-ui);
   font-weight: var(--weight-medium);
+}
+.perm-pill-icon { flex: none; }
+.perm-pill-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
 .perm-pill:hover {
   background: var(--color-surface-sunken);

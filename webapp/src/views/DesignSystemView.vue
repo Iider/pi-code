@@ -65,7 +65,7 @@ onUnmounted(() => {
       <aside class="sidebar">
         <div class="brand">
           <div class="brand-mark">K</div>
-          <div class="brand-name">Kimi Web</div>
+          <div class="brand-name">Pi Code</div>
         </div>
         <div class="brand-sub">Design System · v1.0</div>
 
@@ -98,13 +98,13 @@ onUnmounted(() => {
           <section id="overview">
             <div class="hero">
               <span class="eyebrow">● Design System · v1.0</span>
-              <h1>Kimi Web <span class="grad">Design System</span></h1>
+              <h1>Pi Code <span class="grad">Design System</span></h1>
               <p class="lead">
-                This document defines the visual language and component specification for Kimi Web — design tokens, component primitives, the chat interface, theming, and style rules.
+                This document defines the visual language and component specification for Pi Code — design tokens, component primitives, the chat interface, theming, and style rules.
                 All UI work is grounded in it: unified, restrained, token-driven, and themeable.
               </p>
               <div class="hero-meta">
-                <span class="meta-chip"><span class="dot"></span> Scope <b>apps/kimi-web</b></span>
+                <span class="meta-chip"><span class="dot"></span> Scope <b>webapp</b></span>
                 <span class="meta-chip">Component primitives</span>
                 <span class="meta-chip">Theme <b>1 set · 4 customizable colors</b></span>
                 <span class="meta-chip">Light / dark mode</span>
@@ -127,7 +127,7 @@ onUnmounted(() => {
               <h2 class="sec-title">Design Principles</h2>
             </div>
             <p class="sec-desc">
-              Every UI decision traces back to the following principles. Kimi Web is a local Agent tool for developers: quick scanning, long stretches of staring, often in the dark — the design serves the task, and is restrained, clinical, and density-first.
+              Every UI decision traces back to the following principles. Pi Code is a local Agent tool for developers: quick scanning, long stretches of staring, often in the dark — the design serves the task, and is restrained, clinical, and density-first.
             </p>
 
             <ul class="clean check">
@@ -196,7 +196,7 @@ onUnmounted(() => {
                 <tr><td class="tk">--color-hover</td><td class="val"><span class="swatch" style="background:#0000000d"></span>#0000000d</td><td class="val"><span class="swatch" style="background:#ffffff0d"></span>#ffffff0d</td><td>Row hover wash — lighter than the selected fill (hover &lt; selected); translucent, sits on any surface</td></tr>
                 <tr><td class="tk">--color-media-alpha-bg-1</td><td class="val"><span class="swatch" style="background:#858585"></span>≈#858585</td><td class="val"><span class="swatch" style="background:#676b72"></span>≈#676b72</td><td>Checkerboard square A of the <code>&lt;img&gt;</code> alpha canvas — color-mix of <code>--color-bg</code>/<code>--color-text</code> (52/48); applied via <code>--media-alpha-canvas</code> (16px period)</td></tr>
                 <tr><td class="tk">--color-media-alpha-bg-2</td><td class="val"><span class="swatch" style="background:#6b6b6b"></span>≈#6b6b6b</td><td class="val"><span class="swatch" style="background:#7a7e85"></span>≈#7a7e85</td><td>Checkerboard square B (42/58) — both squares stay ≥3:1 against white and black; opaque images cover the canvas</td></tr>
-                <tr><td class="tk">--color-sidebar-bg</td><td class="val"><span class="swatch" style="background:#fbfaf9"></span>#fbfaf9</td><td class="val"><span class="swatch" style="background:#181817"></span>#181817</td><td>Sidebar surface — one step off <code>--color-bg</code> so the session column reads as its own plane</td></tr>
+                <tr><td class="tk">--color-sidebar-bg</td><td class="val"><span class="swatch" style="background:#f9fbfc"></span>#f9fbfc</td><td class="val"><span class="swatch" style="background:#181817"></span>#181817</td><td>Sidebar surface — one step off <code>--color-bg</code> so the session column reads as its own plane</td></tr>
                 <tr><td class="tk">--color-accent</td><td class="val"><span class="swatch" style="background:#1783ff"></span>#1783ff</td><td class="val"><span class="swatch" style="background:#58a6ff"></span>#58a6ff</td><td>Primary action / link / focus</td></tr>
                 <tr><td class="tk">--color-success</td><td class="val"><span class="swatch" style="background:#0e7a38"></span>#0e7a38</td><td class="val"><span class="swatch" style="background:#3fb950"></span>#3fb950</td><td>Success / pass</td></tr>
                 <tr><td class="tk">--color-warning</td><td class="val"><span class="swatch" style="background:#a9610a"></span>#a9610a</td><td class="val"><span class="swatch" style="background:#d29922"></span>#d29922</td><td>Warning / pending</td></tr>
@@ -233,7 +233,7 @@ onUnmounted(() => {
             <p>All disabled controls use <code>opacity:.5</code> + <code>cursor:not-allowed</code> uniformly; do not separately grey out or recolor.</p>
 
             <h3 class="sub">Font families</h3>
-            <p>Kimi Web uses two font families: <b>--font-ui</b> (UI and body, Inter first) and <b>--font-mono</b> (code and monospace). Components always reference the variables; do not hard-code font names.</p>
+            <p>Pi Code uses two font families: <b>--font-ui</b> (UI and body, Inter first) and <b>--font-mono</b> (code and monospace). Components always reference the variables; do not hard-code font names.</p>
 
             <h4 class="mini">--font-ui · UI &amp; body (Inter first)</h4>
             <p>Body and UI use self-hosted Inter as the primary face. CJK and platform system UI fonts sit late in the fallback chain so Latin glyphs resolve to Inter while Chinese text can fall through to native CJK fonts:</p>
@@ -331,7 +331,7 @@ onUnmounted(() => {
               </template>
             </div>
 
-            <p>Do not use emoji as functional icons (the sole exception is the moon phases 🌑…🌘, used only in the "waiting for the Agent to respond" chat state). The Kimi brand mark (the 32×22 eye logo) is a brand asset and is not part of this icon system.</p>
+            <p>Do not use emoji as functional icons (the sole exception is the moon phases 🌑…🌘, used only in the "waiting for the Agent to respond" chat state). The Pi Code brand mark is a brand asset and is not part of this icon system.</p>
             <p>A few <b>special graphics</b> are not in the registry; each has a dedicated component maintained in one place, and must not be copied by hand: <code>&lt;ContextRing :pct /&gt;</code> (the Composer context progress ring, data-driven), <code>&lt;AuthStateIcon kind /&gt;</code> (the success / expired / error colored illustrations in the login flow), <code>&lt;Spinner /&gt;</code> (loading state). Status dots (such as in the Provider list) always use CSS dots (<code>border-radius:50%</code>), not SVG. The <code>scripts/check-style.mjs</code> <code>icon-from-registry</code> rule exempts the above and the brand mark; all other hand-written <code>&lt;svg&gt;</code> is flagged.</p>
 
             <h3 class="sub">Spacing</h3>
@@ -369,6 +369,7 @@ onUnmounted(() => {
                 <tr><td class="tk">--radius-lg</td><td class="val">12px</td><td>dropdown panel</td><td class="val">10/12px →</td></tr>
                 <tr><td class="tk">--radius-xl</td><td class="val">16px</td><td>dialog, bottom Sheet, Composer</td><td class="val">14/16px →</td></tr>
                 <tr><td class="tk">--radius-2xl</td><td class="val">20px</td><td>accent container / large panel</td><td class="val">20px</td></tr>
+                <tr><td class="tk">--radius-composer</td><td class="val">32px</td><td>first-message composer shell</td><td class="val">32px</td></tr>
                 <tr><td class="tk">--radius-full</td><td class="val">999px</td><td>pill badge, avatar, send button</td><td class="val">999px / 50%</td></tr>
               </tbody>
             </table>
@@ -555,7 +556,7 @@ onUnmounted(() => {
                   <span class="p-badge success"><span class="bd"></span>completed</span>
                   <span class="p-badge warning"><span class="bd"></span>needs confirmation</span>
                   <span class="p-badge danger"><span class="bd"></span>failed</span>
-                  <span class="p-badge solid">KIMI</span>
+                  <span class="p-badge solid">PI</span>
                 </div>
                 <span class="stage-label">With icon / small size</span>
                 <div class="demo-row">
@@ -568,7 +569,7 @@ onUnmounted(() => {
             <div class="stage-wrap">
               <div class="stage-bar"><span class="st">Pill · toolbar pill (composer)</span></div>
               <div class="stage p">
-                <span class="p-pill"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M8 4h13v2H8zM4.5 6.5a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 7a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 6.9a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3M8 11h13v2H8zm0 7h13v2H8z"/></svg><span class="pp-strong">kimi-k2</span><span class="pp-sub">· thinking</span><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="m12 13.171l4.95-4.95l1.414 1.415L12 16L5.636 9.636L7.05 8.222z"/></svg></span>
+                <span class="p-pill"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M8 4h13v2H8zM4.5 6.5a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 7a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 6.9a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3M8 11h13v2H8zm0 7h13v2H8z"/></svg><span class="pp-strong">claude-sonnet-4-6</span><span class="pp-sub">· thinking</span><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="m12 13.171l4.95-4.95l1.414 1.415L12 16L5.636 9.636L7.05 8.222z"/></svg></span>
                 <span class="p-pill"><span style="width:7px;height:7px;border-radius:50%;background:var(--p-warning)"></span>yolo</span>
                 <span class="p-pill"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M12 22C6.477 22 2 17.523 2 12S6.477 2 12 2s10 4.477 10 10s-4.477 10-10 10m0-2a8 8 0 1 0 0-16a8 8 0 0 0 0 16m1-8h4v2h-6V7h2z"/></svg>12k / 200k</span>
               </div>
@@ -576,7 +577,7 @@ onUnmounted(() => {
 
             <!-- ===== Kbd ===== -->
             <h3 class="sub">Kbd · keyboard shortcut</h3>
-            <p><b>Kbd</b> renders a shortcut as keycaps — one block per key, never inline text like <code>(⌘K)</code>. Caps are 18px tall (Badge sm rhythm): sunken surface, 1px border with a 2px bottom edge, 11px UI font, muted text. Typical placement: pushed to the row's trailing edge, opposite the label (e.g. the sidebar search row).</p>
+            <p><b>Kbd</b> renders a shortcut as keycaps — one block per key, never inline text like <code>(⌘K)</code>. Caps are 18px tall (Badge sm rhythm): transparent surface, subtle hairline border, 11px UI font, inherited text color. Typical placement: pushed to the row's trailing edge, opposite the label (e.g. the sidebar search row).</p>
             <div class="stage-wrap">
               <div class="stage-bar"><span class="st">Kbd · keycaps</span></div>
               <div class="stage p">
@@ -891,7 +892,7 @@ onUnmounted(() => {
                 <div class="p-empty" style="width:100%;border:1px dashed var(--p-line);border-radius:var(--p-r-lg)">
                   <svg class="em-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M6.455 19L2 22.5V4a1 1 0 0 1 1-1h18a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1zm-.692-2H20V5H4v13.385zM8 10h8v2H8z"/></svg>
                   <div class="em-title">No chats yet</div>
-                  <div class="em-hint">Click "New chat" to start a conversation with Kimi</div>
+                  <div class="em-hint">Click "New chat" to start a conversation with pi agent</div>
                 </div>
               </div>
             </div>
@@ -906,7 +907,7 @@ onUnmounted(() => {
                 <hr class="p-divider">
                 <div style="width:100%;font-size:var(--p-font-size-sm);color:var(--p-text)">Content below</div>
                 <div style="display:flex;align-items:center;gap:10px;height:24px;font-size:var(--p-font-size-sm);color:var(--p-text)">
-                  <span>kimi-k2</span>
+                  <span>claude-sonnet-4-6</span>
                   <span class="p-divider-v"></span>
                   <span>thinking</span>
                 </div>
@@ -946,8 +947,8 @@ onUnmounted(() => {
                 <div class="p-sheet" style="width:100%;max-width:360px">
                   <div class="p-sheet-handle"></div>
                   <div style="font-size:var(--p-font-size-base);font-weight:700;color:var(--p-text);margin-bottom:8px">Choose a model</div>
-                  <div class="p-menu-item" style="padding:8px 10px">kimi-k2 · thinking</div>
-                  <div class="p-menu-item" style="padding:8px 10px">kimi-k2 · instant</div>
+                  <div class="p-menu-item" style="padding:8px 10px">claude-sonnet-4-6 · thinking</div>
+                  <div class="p-menu-item" style="padding:8px 10px">claude-sonnet-4-6 · instant</div>
                 </div>
               </div>
             </div>
@@ -974,8 +975,8 @@ onUnmounted(() => {
               <div class="stage-bar"><span class="st">Command Bar</span></div>
               <div class="stage p col">
                 <div class="p-cmdbar" style="max-width:620px">
-                  <button class="p-btn primary">Install Kimi Code ▾</button>
-                  <span class="p-cmd"><span class="cmd-text">curl -fsSL https://code.kimi.com/install.sh | bash</span><button class="cmd-copy"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M7 6V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3v3c0 .552-.45 1-1.007 1H4.007A1 1 0 0 1 3 21l.003-14c0-.552.45-1 1.006-1zM5.002 8L5 20h10V8zM9 6h8v10h2V4H9z"/></svg></button></span>
+                  <button class="p-btn primary">Install Pi Code ▾</button>
+                  <span class="p-cmd"><span class="cmd-text">npm install -g @earendil-works/pi-coding-agent</span><button class="cmd-copy"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M7 6V3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1h-3v3c0 .552-.45 1-1.007 1H4.007A1 1 0 0 1 3 21l.003-14c0-.552.45-1 1.006-1zM5.002 8L5 20h10V8zM9 6h8v10h2V4H9z"/></svg></button></span>
                 </div>
               </div>
             </div>
@@ -1005,7 +1006,7 @@ onUnmounted(() => {
                 <div class="p-section-label" style="padding:12px 16px 4px">Workspaces</div>
                 <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin:1px 6px;border-radius:8px;color:var(--p-text);font-size:13px">
                   <svg style="color:var(--d-fg-faint);flex:none" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M4 5v14h16V7h-8.414l-2-2zm8.414 0H21a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h7.414z"/></svg>
-                  kimi-code-web
+                  pi-code-web
                 </div>
                 <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;margin:1px 6px;border-radius:8px;color:var(--p-text);font-size:13px">
                   <svg style="color:var(--d-fg-faint);flex:none" width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M4 5v14h16V7h-8.414l-2-2zm8.414 0H21a1 1 0 0 1 1 1v14a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h7.414z"/></svg>
@@ -1022,7 +1023,7 @@ onUnmounted(() => {
               <h2 class="sec-title">Chat Interface Overhaul</h2>
             </div>
             <p class="sec-desc">
-              The message stream is the core of Kimi Web. The goal of the overhaul: have the 6 card types (Agent / Tool / Question / Approval / Swarm / Todo)
+              The message stream is the core of Pi Code. The goal of the overhaul: have the 6 card types (Agent / Tool / Question / Approval / Swarm / Todo)
               <b>share one card skeleton</b>, distinguished only by the head icon and semantic color; and collapse the Composer into a single rounded container.
             </p>
 
@@ -1184,7 +1185,7 @@ onUnmounted(() => {
               <div class="stage-bar"><span class="st">Composer</span></div>
               <div class="stage p col" style="align-items:center;background:#fff">
                 <div class="p-composer" style="width:100%;max-width:620px">
-                  <div class="p-composer-ta ph">Message Kimi, / to run a command, @ to reference a file…</div>
+                  <div class="p-composer-ta ph">Message pi agent, / to run a command, @ to reference a file…</div>
                   <div class="p-composer-bar">
                     <div class="p-composer-left">
                       <button class="p-icon-btn"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M11 11V5h2v6h6v2h-6v6h-2v-6H5v-2z"/></svg></button>
@@ -1192,7 +1193,7 @@ onUnmounted(() => {
                       <span class="p-pill"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M8 4h13v2H8zM4.5 6.5a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 7a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3m0 6.9a1.5 1.5 0 1 1 0-3a1.5 1.5 0 0 1 0 3M8 11h13v2H8zm0 7h13v2H8z"/></svg>plan</span>
                     </div>
                     <div class="p-composer-right">
-                      <span class="p-pill"><span class="pp-strong">kimi-k2</span><span class="pp-sub">· thinking</span><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="m12 13.171l4.95-4.95l1.414 1.415L12 16L5.636 9.636L7.05 8.222z"/></svg></span>
+                      <span class="p-pill"><span class="pp-strong">claude-sonnet-4-6</span><span class="pp-sub">· thinking</span><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="m12 13.171l4.95-4.95l1.414 1.415L12 16L5.636 9.636L7.05 8.222z"/></svg></span>
                       <button class="p-send"><svg class="p-ic" viewBox="0 0 24 24" fill="currentColor"><path fill="currentColor" d="M13 7.828V20h-2V7.828l-5.364 5.364l-1.414-1.414L12 4l7.778 7.778l-1.414 1.414z"/></svg></button>
                     </div>
                   </div>
@@ -1217,7 +1218,7 @@ onUnmounted(() => {
               <h2 class="sec-title">Theming</h2>
             </div>
             <p class="sec-desc">
-              Kimi Web uses <b>one unified theme</b>: the same components, fonts, radii, shadows, and surfaces — "reskinning" only changes colors.
+              Pi Code uses <b>one unified theme</b>: the same components, fonts, radii, shadows, and surfaces — "reskinning" only changes colors.
               Colors are collapsed into <b>4 seed tokens</b> — two theme colors + one light surface + one dark surface; the neutrals and accent are derived from them,
               and the semantic status colors (success / warning / danger) ship as independent palettes paired with the seeds, one set each for light / dark.
             </p>
@@ -1331,7 +1332,7 @@ onUnmounted(() => {
 
             <h3 class="sub">Moon phase exemption</h3>
             <div class="callout good"><span class="ico">✓</span><div>
-              The "🌑…🌘" moon-phase emoji are a brand signature of Kimi Web, <b>used only in the chat state of "message sent, waiting for the Agent's first response"</b>, and are rendered uniformly by the <code>MoonSpinner</code> component; waiting states such as <code>ActivityNotice</code> reuse it rather than implementing their own moon phase.
+              The "🌑…🌘" moon-phase emoji are a brand signature of Pi Code, <b>used only in the chat state of "message sent, waiting for the Agent's first response"</b>, and are rendered uniformly by the <code>MoonSpinner</code> component; waiting states such as <code>ActivityNotice</code> reuse it rather than implementing their own moon phase.
               It is the sole exception to the <code>no-emoji-icon</code> rule; all other loading states use the plain <code>Spinner</code>.
             </div></div>
 
@@ -1341,7 +1342,7 @@ onUnmounted(() => {
             </div></div>
 
             <div class="footer">
-              <span>Kimi Web Design System · v1.0</span>
+              <span>Pi Code Design System · v1.0</span>
               <span>The reference when changing the web UI</span>
             </div>
           </section>
@@ -1477,7 +1478,7 @@ onUnmounted(() => {
               <h2 class="sec-title">Accessibility (pragmatic edition)</h2>
             </div>
             <p class="sec-desc">
-              Kimi Web is a local developer tool; it <b>does not target a specific WCAG conformance level</b>, nor maintain a full screen-reader QA matrix.
+              Pi Code is a local developer tool; it <b>does not target a specific WCAG conformance level</b>, nor maintain a full screen-reader QA matrix.
               This section collects only the rules that are "low-cost, don't hurt the look, and directly benefit keyboard-heavy users", as the baseline contract for each primitive;
               the more expensive, lower-ROI parts (such as real-time announcement orchestration for streaming output) are not mandatory for now.
             </p>

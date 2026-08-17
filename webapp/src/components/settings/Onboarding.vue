@@ -1,139 +1,149 @@
-<!-- apps/kimi-web/src/components/settings/Onboarding.vue -->
-<!-- First-run onboarding overlay: a short welcome + the language, color scheme
-     and accent preferences, all of which apply live. Re-openable from the
-     settings popover. Each preference can be changed any time later, so there's
-     nothing to "lose". -->
+<!-- Full-screen first-run setup. Preferences apply immediately and remain available from Settings. -->
 <script setup lang="ts">
 import { useI18n } from 'vue-i18n';
-import { availableLocales, setLocale, type LocaleCode } from '../../i18n';
-import { useAppearance, type Accent, type ColorScheme } from '../../composables/client/useAppearance';
-import Button from '../ui/Button.vue';
-import Dialog from '../ui/Dialog.vue';
-import SegmentedControl from '../ui/SegmentedControl.vue';
+import { setLocale, type LocaleCode } from '../../i18n';
+import { useAppearance, type ColorScheme } from '../../composables/client/useAppearance';
 
 const emit = defineEmits<{ complete: []; skip: [] }>();
-
 const { t, locale } = useI18n();
-const { colorScheme, accent, setColorScheme, setAccent } = useAppearance();
+const { colorScheme, setColorScheme } = useAppearance();
+const localeOptions: Array<{ value: LocaleCode; label: string }> = [
+  { value: 'en', label: 'English' },
+  { value: 'zh', label: '简体中文' },
+];
+const schemeOptions: ColorScheme[] = ['system', 'light', 'dark'];
 
 function chooseLocale(code: LocaleCode): void {
   if (locale.value !== code) setLocale(code);
 }
-
-function finish(): void {
-  emit('complete');
-}
 </script>
 
 <template>
-  <Dialog
-    :open="true"
-    size="md"
-    :close-on-overlay="false"
-    :close-on-esc="false"
-    @close="emit('skip')"
-  >
-    <template #head>
-      <div class="ob-brand">
-        <svg class="ob-logo" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kimi Code">
-          <defs>
-            <mask id="obKimiEyes" maskUnits="userSpaceOnUse">
-              <rect x="0" y="0" width="32" height="22" fill="#fff" />
-              <g class="ob-eyes" fill="#000">
-                <rect class="ob-eye" x="11.8" y="7" width="2.8" height="8" rx="1.4" />
-                <rect class="ob-eye" x="17.4" y="7" width="2.8" height="8" rx="1.4" />
-              </g>
-            </mask>
-          </defs>
-          <rect x="1" y="1" width="30" height="20" rx="6" fill="var(--color-accent)" mask="url(#obKimiEyes)" />
-        </svg>
-        <div class="ob-brand-text">
-          <div class="ob-title">{{ t('onboarding.title') }}</div>
-          <div class="ob-sub">{{ t('onboarding.subtitle') }}</div>
-        </div>
-      </div>
-    </template>
+  <Teleport to="body">
+    <div class="ob-page" role="dialog" aria-modal="true" :aria-label="t('onboarding.title')">
+      <main class="ob-panel">
+        <header class="ob-head">
+          <div class="ob-logo" aria-hidden="true"><i></i><i></i></div>
+          <h1>{{ t('onboarding.title') }}</h1>
+          <p>{{ t('onboarding.subtitle') }}</p>
+        </header>
 
-    <section class="ob-sec">
-      <div class="ob-label">{{ t('onboarding.languageLabel') }}</div>
-      <SegmentedControl
-        :model-value="locale"
-        :options="availableLocales.map((l) => ({ value: l.code, label: l.label }))"
-        @update:model-value="chooseLocale($event as LocaleCode)"
-      />
-    </section>
+        <section class="ob-section">
+          <h2>{{ t('onboarding.languageLabel') }}</h2>
+          <div class="ob-language-grid">
+            <button v-for="option in localeOptions" :key="option.value" type="button"
+              class="ob-choice ob-language" :class="{ selected: locale === option.value }"
+              :aria-pressed="locale === option.value" @click="chooseLocale(option.value)">
+              <span class="ob-radio" aria-hidden="true"></span><span>{{ option.label }}</span>
+            </button>
+          </div>
+        </section>
 
-    <section class="ob-sec">
-      <div class="ob-label">{{ t('theme.colorSchemeLabel') }}</div>
-      <SegmentedControl
-        :model-value="colorScheme"
-        :options="[
-          { value: 'light', label: t('theme.light') },
-          { value: 'dark', label: t('theme.dark') },
-          { value: 'system', label: t('theme.system') },
-        ]"
-        @update:model-value="setColorScheme($event as ColorScheme)"
-      />
-    </section>
+        <section class="ob-section">
+          <h2>{{ t('theme.colorSchemeLabel') }}</h2>
+          <div class="ob-theme-grid">
+            <button v-for="scheme in schemeOptions" :key="scheme" type="button"
+              class="ob-choice ob-theme" :class="{ selected: colorScheme === scheme }"
+              :aria-pressed="colorScheme === scheme" @click="setColorScheme(scheme)">
+              <span class="ob-theme-preview" :class="`is-${scheme}`" aria-hidden="true">
+                <span class="preview-sidebar"><i></i><i></i><i></i></span>
+                <span class="preview-content"><i></i><i></i><i></i></span>
+              </span>
+              <span>{{ t(`theme.${scheme}`) }}</span>
+            </button>
+          </div>
+        </section>
 
-    <section class="ob-sec">
-      <div class="ob-label">{{ t('theme.accentLabel') }}</div>
-      <SegmentedControl
-        :model-value="accent"
-        :options="[
-          { value: 'blue', label: t('theme.accentBlue') },
-          { value: 'mono', label: t('theme.accentBlack') },
-        ]"
-        @update:model-value="setAccent($event as Accent)"
-      />
-    </section>
-
-    <Button variant="primary" size="lg" class="ob-start" @click="finish">{{ t('onboarding.start') }}</Button>
-  </Dialog>
+        <footer class="ob-actions">
+          <button type="button" class="ob-continue" @click="emit('complete')">{{ t('onboarding.continue') }}</button>
+          <button type="button" class="ob-skip" @click="emit('skip')">{{ t('onboarding.skip') }}</button>
+        </footer>
+      </main>
+    </div>
+  </Teleport>
 </template>
 
 <style scoped>
-.ob-brand {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  min-width: 0;
+.ob-page {
+  position: fixed; inset: 0; z-index: var(--z-modal); overflow: auto;
+  background: var(--color-surface-sunken); color: var(--color-text);
 }
-.ob-brand-text { min-width: 0; }
+.ob-panel {
+  box-sizing: border-box; width: min(560px, 100%); min-height: 100%; margin: 0 auto;
+  padding: 110px 20px 32px; display: flex; flex-direction: column;
+}
+.ob-head { text-align: center; }
 .ob-logo {
-  width: 52px; height: 36px; flex: none;
+  width: 68px; height: 46px; margin: 0 auto 18px; border-radius: var(--radius-lg);
+  background: var(--color-accent); display: flex; align-items: center; justify-content: center; gap: 7px;
 }
-.ob-title { color: var(--color-text); font-size: var(--text-xl); font-weight: var(--weight-medium); }
-.ob-sub { color: var(--color-text-muted); font-size: var(--text-base); margin-top: 1px; }
-
-.ob-sec { margin-bottom: var(--space-4); }
-.ob-label { color: var(--color-text); font-size: var(--text-sm); font-weight: var(--weight-medium); margin-bottom: var(--space-2); }
-
-/* full-width primary CTA */
-.ob-start { width: 100%; }
-
-/* Onboarding logo: faster eye animations than the sidebar (6s look, 4s blink). */
-.ob-eyes {
-  animation: ob-eye-look 6s ease-in-out infinite;
+.ob-logo i {
+  width: 6px; height: 18px; border-radius: var(--radius-full); background: var(--color-text-on-accent);
 }
-.ob-eye {
-  transform-box: fill-box;
-  transform-origin: center;
-  animation: ob-eye-blink 4s ease-in-out infinite;
+.ob-head h1 { margin: 0; font-size: 21px; line-height: 1.4; font-weight: var(--weight-semibold); }
+.ob-head p { margin: 5px 0 0; color: var(--color-text-muted); font-size: var(--text-base); }
+.ob-section { margin-top: 30px; }
+.ob-section h2 { margin: 0 0 10px; font-size: var(--text-sm); font-weight: var(--weight-medium); }
+.ob-language-grid, .ob-theme-grid { display: grid; gap: 12px; }
+.ob-language-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.ob-theme-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.ob-choice {
+  appearance: none; border: 1px solid var(--color-line-strong); background: var(--color-surface-raised);
+  color: var(--color-text); cursor: pointer; font: inherit;
+  transition: border-color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
 }
-@keyframes ob-eye-look {
-  0%, 42% { transform: translateX(0); }
-  47%, 53% { transform: translateX(2px); }
-  58%, 80% { transform: translateX(0); }
-  84%, 90% { transform: translateX(-2px); }
-  95%, 100% { transform: translateX(0); }
+.ob-choice:hover { border-color: var(--color-accent); }
+.ob-choice:focus-visible { outline: none; box-shadow: var(--p-focus-ring-strong); }
+.ob-choice.selected { border-color: var(--color-accent); background: var(--color-accent-soft); }
+.ob-language {
+  height: 58px; padding: 0 16px; border-radius: var(--radius-lg); display: flex;
+  align-items: center; gap: 12px; text-align: left;
 }
-@keyframes ob-eye-blink {
-  0%, 94%, 100% { transform: scaleY(1); }
-  96.5%, 98% { transform: scaleY(0.12); }
+.ob-radio {
+  width: 18px; height: 18px; box-sizing: border-box; border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-full); background: var(--color-surface-raised);
 }
-@media (prefers-reduced-motion: reduce) {
-  .ob-eyes, .ob-eye { animation: none; }
+.selected .ob-radio { border: 5px solid var(--color-accent); }
+.ob-theme { padding: 12px 12px 14px; border-radius: var(--radius-lg); font-weight: var(--weight-medium); }
+.ob-theme-preview {
+  height: 86px; margin-bottom: 11px; overflow: hidden; display: grid; grid-template-columns: 34% 66%;
+  border: 1px solid var(--color-line); border-radius: var(--radius-md); text-align: left;
 }
+.preview-sidebar, .preview-content { display: flex; flex-direction: column; gap: 7px; padding: 15px 10px; }
+.preview-sidebar i, .preview-content i { display: block; height: 6px; border-radius: var(--radius-full); }
+.preview-sidebar i { background: color-mix(in srgb, black 20%, white); }
+.preview-content i { background: color-mix(in srgb, black 15%, white); }
+.preview-content i:nth-child(1) { width: 65%; }
+.preview-content i:nth-child(2) { width: 85%; }
+.preview-content i:nth-child(3) { width: 48%; }
+.is-light .preview-sidebar { background: color-mix(in srgb, black 7%, white); }
+.is-light .preview-content { background: white; }
+.is-dark .preview-sidebar { background: color-mix(in srgb, white 12%, black); }
+.is-dark .preview-content { background: color-mix(in srgb, white 7%, black); }
+.is-dark .preview-sidebar i, .is-dark .preview-content i { background: color-mix(in srgb, white 28%, black); }
+.is-system .preview-sidebar, .is-system .preview-content { position: relative; background: white; }
+.is-system .preview-sidebar::after, .is-system .preview-content::after {
+  content: ''; position: absolute; inset: 0 0 0 50%; background: color-mix(in srgb, white 9%, black);
+}
+.is-system .preview-sidebar i, .is-system .preview-content i { position: relative; z-index: var(--z-base); }
+.ob-actions {
+  margin-top: auto; padding-top: 64px; display: flex; flex-direction: column; align-items: center;
+}
+.ob-continue, .ob-skip { border: 0; font: inherit; cursor: pointer; }
+.ob-continue {
+  width: 140px; height: 42px; border-radius: var(--radius-lg); background: var(--color-accent);
+  color: var(--color-text-on-accent); font-weight: var(--weight-medium);
+}
+.ob-continue:hover { background: var(--color-accent-hover); }
+.ob-continue:focus-visible, .ob-skip:focus-visible { outline: none; box-shadow: var(--p-focus-ring-strong); }
+.ob-skip { margin-top: 12px; padding: 5px 12px; background: transparent; color: var(--color-text-muted); }
+.ob-skip:hover { color: var(--color-text); }
+@media (max-width: 600px) {
+  .ob-panel { padding: 48px 16px 24px; }
+  .ob-theme-grid { grid-template-columns: 1fr; }
+  .ob-theme { display: grid; grid-template-columns: 128px 1fr; align-items: center; gap: 16px; text-align: left; }
+  .ob-theme-preview { height: 66px; margin: 0; }
+  .ob-actions { padding-top: 40px; }
+}
+@media (prefers-reduced-motion: reduce) { .ob-choice { transition: none; } }
 </style>

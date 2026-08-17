@@ -25,7 +25,7 @@ export default {
   interruptTitle: '中断当前操作',
   expandTitle: '展开输入框进行多行编辑',
   collapseTitle: '收起输入框',
-  emptyConversationTitle: 'Kimi Code',
+  emptyConversationTitle: 'Pi Code',
   emptyConversation: '还没有消息 —— 在下方输入开始对话',
   quickStartPlaceholder: '输入消息开始新对话…',
   thinkingSuffix: ' · 思考',

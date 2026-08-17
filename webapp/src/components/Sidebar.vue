@@ -125,6 +125,7 @@ const emit = defineEmits<{
 // ---------------------------------------------------------------------------
 const showSearch = ref(false);
 const sessionSearchKeys = isAppleShortcutPlatform() ? ['⌘', 'K'] : ['Ctrl', 'K'];
+const newChatKeys = isAppleShortcutPlatform() ? ['⌃', '⇧', 'O'] : ['Ctrl', 'Shift', 'O'];
 
 function openSearch(): void {
   // Sessions are loaded per-workspace (first page only); lazily drain the rest
@@ -650,7 +651,7 @@ onBeforeUnmount(() => {
       <div class="ch">
         <div class="ch-brand">
           <template v-if="!isMacosDesktop">
-            <svg ref="logoRef" class="ch-logo" :class="{ 'is-dev': isDev }" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Kimi Code" @click="onLogoClick" @pointerdown="onLogoPointerDown" @pointerup="onLogoPointerUp" @pointercancel="onLogoPointerUp">
+            <svg ref="logoRef" class="ch-logo" :class="{ 'is-dev': isDev }" viewBox="0 0 32 22" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Pi Code" @click="onLogoClick" @pointerdown="onLogoPointerDown" @pointerup="onLogoPointerUp" @pointercancel="onLogoPointerUp">
               <defs>
                 <mask id="kimiEyes" maskUnits="userSpaceOnUse">
                   <rect x="0" y="0" width="32" height="22" fill="#fff" />
@@ -662,7 +663,7 @@ onBeforeUnmount(() => {
               </defs>
               <rect x="1" y="1" width="30" height="20" rx="6" fill="var(--logo)" mask="url(#kimiEyes)" />
             </svg>
-            <span class="ch-name">Kimi Code</span>
+            <span class="ch-name">Pi Code</span>
             <Pill
               v-if="isDev"
               class="ch-backend"
@@ -692,6 +693,7 @@ onBeforeUnmount(() => {
         <button class="btn-new-chat" type="button" @click.stop="emit('create')">
           <Icon name="chat-new" />
           <span>{{ t('sidebar.newChat') }}</span>
+          <Kbd :keys="newChatKeys" />
         </button>
         <IconButton
           v-if="showNewWorkspaceButton"
@@ -903,13 +905,14 @@ onBeforeUnmount(() => {
      - row boxes (hover/selected pills) sit --sb-inset from the sidebar edges;
      - text/icons start at --sb-pad-x = --sb-inset + 8px row padding;
      - row titles start at --sb-pad-x + --sb-gutter + --sb-gap. */
-  --sb-inset: var(--space-3);  /* row box inset from the sidebar edge */
-  --sb-pad-x: var(--space-5);  /* content start x (inset + row padding) */
+  --sb-inset: var(--space-2);  /* row box inset from the sidebar edge */
+  --sb-pad-x: var(--space-4);  /* content start x (inset + row padding) */
   --sb-gutter: 16px;           /* leading icon slot (matches the 16px folder icon, so the session title aligns under the workspace name) */
   --sb-gap: var(--space-2);    /* gap between the icon slot and the text */
   /* Row hover wash — global --color-hover (lighter than the selected fill;
      both translucent, so they sit on any surface). */
-  --sb-hover: var(--color-hover);
+  --sb-hover: color-mix(in srgb, var(--color-text) 3%, transparent);
+  --sb-section-weight: 600;
 }
 /* While dragging the resize handle, follow the pointer 1:1 (same pattern as
    .global-preview.no-anim in App.vue). */
@@ -1048,7 +1051,7 @@ onBeforeUnmount(() => {
 .btn-new-chat {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2);
   flex: 1;
   min-width: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
@@ -1058,6 +1061,7 @@ onBeforeUnmount(() => {
   color: var(--color-text);
   font-family: var(--font-ui);
   font-size: var(--ui-font-size-sm);
+  font-weight: var(--weight-medium);
   line-height: var(--leading-tight);
   cursor: pointer;
   text-align: left;
@@ -1070,6 +1074,20 @@ onBeforeUnmount(() => {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.btn-new-chat :deep(.ui-kbd) { margin-left: auto; }
+.btn-new-chat :deep(.ui-kbd),
+.search :deep(.ui-kbd) {
+  opacity: 0;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+.btn-new-chat :deep(.ui-kbd__key),
+.search :deep(.ui-kbd__key) {
+  border-color: color-mix(in srgb, var(--color-text) 13%, transparent);
+}
+.btn-new-chat:hover :deep(.ui-kbd),
+.btn-new-chat:focus-visible :deep(.ui-kbd),
+.search:hover :deep(.ui-kbd),
+.search:focus-visible :deep(.ui-kbd) { opacity: 1; }
 
 /* Session search — the wrapper is the last fixed row above the list and
    carries the scroll-linked seam: its bottom border/shadow only appear once
@@ -1091,7 +1109,7 @@ onBeforeUnmount(() => {
 .search {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-2);
   width: 100%;
   margin: 0;
   padding: 8px calc(var(--sb-pad-x) - var(--sb-inset));
@@ -1112,6 +1130,7 @@ onBeforeUnmount(() => {
 }
 .search-icon {
   flex: none;
+  transform: translateY(-0.5px);
 }
 .search-input {
   flex: 1;
@@ -1133,7 +1152,7 @@ onBeforeUnmount(() => {
 .sessions {
   flex: 1;
   overflow-y: auto;
-  padding: var(--space-3) var(--sb-inset);
+  padding: var(--space-4) var(--sb-inset) var(--space-3);
   min-height: 0;
 }
 .sessions::-webkit-scrollbar { width: 4px; }
@@ -1190,9 +1209,9 @@ onBeforeUnmount(() => {
   padding: 0 var(--space-3) var(--space-1) var(--space-2);
   font-family: var(--font-ui);
   font-size: var(--text-xs);
-  font-weight: var(--weight-regular);
+  font-weight: var(--sb-section-weight);
   text-transform: uppercase;
-  color: var(--faint);
+  color: color-mix(in srgb, var(--color-text) 33%, transparent);
   user-select: none;
 }
 .side-section-title {

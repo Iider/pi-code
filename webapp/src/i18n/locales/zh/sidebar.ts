@@ -23,7 +23,7 @@ export default {
   export: '导出会话',
   delete: '删除',
   removeWorkspace: '移除工作区',
-  brand: 'Kimi Code',
+  brand: 'Pi Code',
   signedIn: '已登录',
   signOut: '退出登录',
   notSignedIn: '未登录',
