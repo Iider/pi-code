@@ -52,6 +52,15 @@ describe('model config WebUI adapter contract', () => {
     expect(index.match(/src="\/model-config\.js"/g)).toHaveLength(1);
   });
 
+  it('adds message-level native pi fork actions to the frozen WebUI', async () => {
+    const script = await readFile(resolve(adapterRoot, 'src', 'model-config.js'), 'utf8');
+    const css = await readFile(resolve(projectRoot, 'webui', 'adapter', 'pi-code-brand.css'), 'utf8');
+    expect(script).toContain("document.querySelectorAll('.a-msg[data-turn-id]')");
+    expect(script).toContain("body: JSON.stringify({ entry_id: entryId })");
+    expect(script).toContain("localeText('从此处分叉', 'Fork from here')");
+    expect(css).toContain('.pi-fork-from-message');
+  });
+
   it('marks native desktop drag regions without relying only on the routed URL', async () => {
     const script = await readFile(resolve(adapterRoot, 'src', 'model-config.js'), 'utf8');
     expect(script).toContain('window.__PI_CODE_DESKTOP__ === true');
@@ -64,7 +73,12 @@ describe('model config WebUI adapter contract', () => {
     const desktopMain = await readFile(resolve(projectRoot, 'desktop', 'src-tauri', 'src', 'main.rs'), 'utf8');
     expect(css).toContain('--panel-head-h: 42px');
     expect(css).toMatch(/html\.pi-code-desktop \.side \.ch-brand \{\s*display: none;/);
-    expect(css).toMatch(/\.ch-brand::before \{/);
+    expect(css).toMatch(
+      /\.ch-brand::before,\s*\.side-footer \.user-menu-trigger::before \{/,
+    );
+    expect(css).toContain('width: 30px;');
+    expect(css).toContain('height: 20px;');
+    expect(css).toContain('padding-block: 6px;');
     expect(css).toMatch(/\.sidebar-toggle-btn \{\s*top: 8px;\s*left: 84px;/);
     expect(css).toMatch(/\.new-chat-btn \{\s*top: 8px;\s*left: 112px;/);
     expect(desktopMain).toContain('traffic_light_position(tauri::LogicalPosition::new(13.0, 23.0))');

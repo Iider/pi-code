@@ -6,7 +6,15 @@ import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
 import { join, dirname, basename, extname, relative, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
-import { PiBridge, workspaceIdFor, workspaceName, SessionNotFoundError } from './bridge.ts';
+import {
+  PiBridge,
+  workspaceIdFor,
+  workspaceName,
+  SessionBusyError,
+  SessionForkPointError,
+  SessionNotFoundError,
+  SessionNotPersistedError,
+} from './bridge.ts';
 import { ErrorCodes, fail, newRequestId, ok } from './envelope.ts';
 import { checkToken } from './token.ts';
 import { ModelConfigurationService } from './models/configuration-service.ts';
@@ -393,6 +401,15 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
           await sendOk(reply, {}, requestId);
           return;
         }
+        case 'fork': {
+          const title = typeof body['title'] === 'string' ? body['title'] : undefined;
+          const entryId = typeof body['entry_id'] === 'string' ? body['entry_id'] : undefined;
+          const entry = entryId
+            ? await bridge.forkSessionFromEntry(id, entryId, title)
+            : await bridge.forkSession(id, title);
+          await sendOk(reply, bridge.toWireSession(entry), requestId);
+          return;
+        }
         default: {
           reply.statusCode = 404;
           await reply.send(fail(ErrorCodes.NOT_IMPLEMENTED, `Unsupported session action: ${action ?? '(none)'}`, requestId));
@@ -400,6 +417,21 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       }
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof SessionBusyError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.SESSION_BUSY, 'Session is busy and cannot be forked', requestId));
+        return;
+      }
+      if (error instanceof SessionNotPersistedError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.VALIDATION, 'Session must be persisted before it can be forked', requestId));
+        return;
+      }
+      if (error instanceof SessionForkPointError) {
+        reply.statusCode = 400;
+        await reply.send(fail(ErrorCodes.MESSAGE_NOT_FOUND, error.message, requestId));
+        return;
+      }
       reply.statusCode = 500;
       await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
@@ -560,8 +592,46 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   // Degraded kimi-specific sub-resources
   app.get('/api/v1/sessions/:id/goal', async (_req, reply) => sendOk(reply, null, newRequestId()));
   app.get('/api/v1/sessions/:id/warnings', async (_req, reply) => sendOk(reply, { warnings: [] }, newRequestId()));
-  app.get('/api/v1/sessions/:id/children', async (_req, reply) => sendOk(reply, { items: [], has_more: false }, newRequestId()));
-  app.post('/api/v1/sessions/:id/children', async (req, reply) => sendOk(reply, { items: [], has_more: false }, newRequestId()));
+  app.get('/api/v1/sessions/:id/children', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    try {
+      const children = await bridge.listChildSessions(id);
+      await sendOk(reply, {
+        items: children.map((child) => {
+          const entry = bridge.getEntry(child.id);
+          return entry
+            ? bridge.toWireSession(entry)
+            : diskSessionToWire(child, bridge.epoch);
+        }),
+        has_more: false,
+      }, requestId);
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      throw error;
+    }
+  });
+  app.post('/api/v1/sessions/:id/children', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { title?: string };
+    try {
+      const entry = await bridge.forkSession(id, body.title, 'side_chat');
+      await sendOk(reply, bridge.toWireSession(entry), requestId);
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof SessionBusyError || error instanceof SessionNotPersistedError) {
+        reply.statusCode = 409;
+        await reply.send(fail(
+          error instanceof SessionBusyError ? ErrorCodes.SESSION_BUSY : ErrorCodes.VALIDATION,
+          error.message,
+          requestId,
+        ));
+        return;
+      }
+      throw error;
+    }
+  });
   app.get('/api/v1/sessions/:id/tasks', async (_req, reply) => sendOk(reply, { items: [] }, newRequestId()));
   app.post('/api/v1/sessions/:id/tasks/:rest', async (_req, reply) => sendOk(reply, {}, newRequestId()));
   app.get('/api/v1/sessions/:id/terminals', async (_req, reply) => sendOk(reply, { items: [] }, newRequestId()));
@@ -649,7 +719,18 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
 // ---------------------------------------------------------------------------
 
 function diskSessionToWire(
-  s: { id: string; cwd: string; title: string; createdAt: Date; updatedAt: Date; messageCount: number; archived: boolean; busy: boolean },
+  s: {
+    id: string;
+    cwd: string;
+    title: string;
+    createdAt: Date;
+    updatedAt: Date;
+    messageCount: number;
+    parentSessionId?: string;
+    childSessionKind?: 'fork' | 'side_chat';
+    archived: boolean;
+    busy: boolean;
+  },
   epoch: string,
 ) {
   void epoch;
@@ -660,7 +741,16 @@ function diskSessionToWire(
     updated_at: s.updatedAt.toISOString(),
     busy: s.busy,
     archived: s.archived,
-    metadata: { cwd: s.cwd },
+    metadata: {
+      cwd: s.cwd,
+      ...(s.parentSessionId && s.childSessionKind === 'side_chat'
+        ? { parent_session_id: s.parentSessionId }
+        : {}),
+      ...(s.parentSessionId && s.childSessionKind === 'fork'
+        ? { forked_from_session_id: s.parentSessionId }
+        : {}),
+      ...(s.childSessionKind ? { child_session_kind: s.childSessionKind } : {}),
+    },
     agent_config: { model: '' },
     usage: {
       input_tokens: 0,

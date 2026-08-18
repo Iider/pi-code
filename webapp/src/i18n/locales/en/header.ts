@@ -18,7 +18,7 @@ export default {
   options: 'Options',
   copySessionId: 'Copy Session ID',
   renameSession: 'Rename',
-  forkSession: 'Fork session',
+  forkSession: 'Duplicate as new session',
   archiveSession: 'Archive',
   exportSession: 'Export session',
 };

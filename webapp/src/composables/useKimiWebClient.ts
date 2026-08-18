@@ -2368,7 +2368,7 @@ const workspacesView = computed<WorkspaceView[]>(() => {
   if (workspaceSortMode.value === 'recent') {
     const lastEditedAt = new Map<string, number>();
     for (const s of rawState.sessions) {
-      if (s.parentSessionId) continue;
+      if (s.childSessionKind === 'side_chat') continue;
       const wid = workspaceIdForSession(s);
       const t = new Date(s.updatedAt).getTime();
       if (t > (lastEditedAt.get(wid) ?? Number.NEGATIVE_INFINITY)) {
@@ -2422,12 +2422,13 @@ const sessionsForView = computed<Session[]>(() => {
   // workspace a hit belongs to. Built once per recompute (O(n+m)) instead of a
   // per-session find.
   const nameByWorkspaceId = new Map(workspacesView.value.map((w) => [w.id, w.name]));
-  // Child ("side chat") sessions never appear in the main list — they live in
-  // the side-chat panel only. Sessions under a removed (hidden) workspace are
+  // Side-chat sessions never appear in the main list — they live in the
+  // side-chat panel only. User-created forks are ordinary visible sessions,
+  // even though they retain their native pi parent relationship. Sessions under a removed (hidden) workspace are
   // excluded too, so this flat list matches what the grouped sidebar renders
   // and sidebar search can't resurrect sessions from a removed workspace.
   return rawState.sessions
-    .filter((s) => !s.parentSessionId && visibleWorkspaceIds.has(workspaceIdForSession(s)))
+    .filter((s) => s.childSessionKind !== 'side_chat' && visibleWorkspaceIds.has(workspaceIdForSession(s)))
     .map((s) => {
       const workspaceId = workspaceIdForSession(s);
       return {
@@ -2451,7 +2452,7 @@ const workspaceGroups = computed<WorkspaceGroup[]>(() => {
   for (const s of rawState.sessions.toSorted(
     (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime(),
   )) {
-    if (s.parentSessionId) continue; // child sessions stay out of the list
+    if (s.childSessionKind === 'side_chat') continue;
     const wid = workspaceIdForSession(s);
     const view: Session = {
       id: s.id,

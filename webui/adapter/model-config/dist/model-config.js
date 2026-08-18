@@ -100,8 +100,64 @@ function queueAdapterRefresh() {
     removePrivacySettings();
     hideRedundantConfigureEntry();
     enhanceOAuthEntries();
+    enhanceMessageForkActions();
     enhanceDesktopWindowChrome();
   });
+}
+
+function enhanceMessageForkActions() {
+  // Forking continues from a completed agent reply, so the action lives on the
+  // assistant message footer (rendered only once streaming has finished).
+  for (const msg of document.querySelectorAll('.a-msg[data-turn-id]')) {
+    const meta = msg.querySelector(':scope > .a-msg-ft');
+    if (!meta || meta.querySelector('.pi-fork-from-message')) continue;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pi-fork-from-message';
+    button.dataset.entryId = msg.dataset.turnId;
+    button.setAttribute('aria-label', localeText('从此处分叉', 'Fork from here'));
+    button.title = localeText('从此处分叉', 'Fork from here');
+    button.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3v12m0 0a3 3 0 1 0 0 6 3 3 0 0 0 0-6Zm0 0c7 0 12-3 12-9m0 0-3 3m3-3 3 3"/></svg>';
+    button.addEventListener('click', () => void forkFromMessage(button));
+    const copyButton = meta.querySelector('.a-cpbtn');
+    const copySlot = copyButton
+      ? [...meta.children].find((child) => child === copyButton || child.contains(copyButton))
+      : null;
+    meta.insertBefore(button, copySlot ?? null);
+  }
+}
+
+async function forkFromMessage(button) {
+  if (button.disabled) return;
+  const match = location.pathname.match(/^\/sessions\/([^/]+)/);
+  const sessionId = match?.[1];
+  const entryId = button.dataset.entryId;
+  if (!sessionId || !entryId) return;
+
+  button.disabled = true;
+  button.classList.add('is-loading');
+  try {
+    const session = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}:fork`, {
+      method: 'POST',
+      body: JSON.stringify({ entry_id: entryId }),
+    });
+    location.assign(`/sessions/${encodeURIComponent(session.id)}`);
+  } catch (error) {
+    button.disabled = false;
+    button.classList.remove('is-loading');
+    showForkError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function showForkError(message) {
+  document.querySelector('.pi-fork-toast')?.remove();
+  const toast = document.createElement('div');
+  toast.className = 'pi-fork-toast';
+  toast.setAttribute('role', 'alert');
+  toast.textContent = localeText(`无法从此处分叉：${message}`, `Could not fork from here: ${message}`);
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
 }
 
 function enhanceDesktopWindowChrome() {
@@ -526,10 +582,12 @@ function setOAuthControlsDisabled(disabled) {
 }
 
 async function apiRequest(url, init = {}) {
+  const authorization = serverAuthorization();
   const response = await fetch(url, {
     ...init,
     headers: {
       ...(init.body === undefined ? {} : { 'content-type': 'application/json' }),
+      ...(authorization ? { authorization } : {}),
       ...(init.headers ?? {}),
     },
   });
@@ -538,6 +596,25 @@ async function apiRequest(url, init = {}) {
     throw new Error(envelope?.msg || `${response.status} ${response.statusText}`);
   }
   return envelope.data;
+}
+
+// The frozen WebUI persists the bearer token as JSON under this key in either
+// storage area. Read it back so adapter calls authenticate like native ones.
+function serverAuthorization() {
+  const KEY = 'kimi-web.server-credential';
+  for (const store of [globalThis.localStorage, globalThis.sessionStorage]) {
+    try {
+      const raw = store?.getItem(KEY);
+      if (!raw) continue;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed?.credential === 'string' && parsed.credential.length > 0) {
+        return `Bearer ${parsed.credential}`;
+      }
+    } catch {
+      // Malformed entry — fall through to the next storage area.
+    }
+  }
+  return undefined;
 }
 
 function localeText(zh, en) {

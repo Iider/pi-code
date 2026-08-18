@@ -2,7 +2,7 @@
 // exposes them to the REST/WS layers in kimi-web's wire vocabulary.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, basename, relative, isAbsolute } from 'node:path';
+import { join, basename, dirname, relative, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
 import { createHash } from 'node:crypto';
 import {
@@ -51,6 +51,8 @@ export interface BridgeSession {
   updatedAt: number;
   title?: string;
   lastPrompt?: string;
+  parentSessionId?: string;
+  childSessionKind?: 'fork' | 'side_chat';
   archived: boolean;
 }
 
@@ -63,6 +65,8 @@ export interface SessionListItem {
   updatedAt: Date;
   messageCount: number;
   firstMessage: string;
+  parentSessionId?: string;
+  childSessionKind?: 'fork' | 'side_chat';
   archived: boolean;
   busy: boolean;
 }
@@ -72,6 +76,36 @@ type FrameListener = (sessionId: string, frame: EventFrame) => void;
 interface SessionMeta {
   archived?: boolean;
   title?: string;
+  childSessionKind?: 'fork' | 'side_chat';
+}
+
+export class SessionBusyError extends Error {
+  constructor(sessionId: string) {
+    super(`Session is busy and cannot be forked: ${sessionId}`);
+  }
+}
+
+export class SessionNotPersistedError extends Error {
+  constructor(sessionId: string) {
+    super(`Session is not persisted and cannot be forked: ${sessionId}`);
+  }
+}
+
+export class SessionForkPointError extends Error {
+  constructor(entryId: string) {
+    super(`Fork point must be a persisted user or assistant message: ${entryId}`);
+  }
+}
+
+const DEFAULT_SESSION_TITLES = new Set(['session', 'new session', '新会话']);
+
+function isDefaultSessionTitle(title: string | undefined): boolean {
+  return !title || DEFAULT_SESSION_TITLES.has(title.trim().toLocaleLowerCase());
+}
+
+function titleFromPrompt(prompt: string): string | undefined {
+  const normalized = prompt.replace(/\s+/g, ' ').trim();
+  return normalized ? normalized.slice(0, 60) : undefined;
 }
 
 export interface BridgeOptions {
@@ -123,9 +157,15 @@ export class PiBridge {
     return () => this.listeners.delete(listener);
   }
 
-  private emit(entry: BridgeSession, type: string, payload: Record<string, unknown>, protocol = false): EventFrame {
+  private emit(
+    entry: BridgeSession,
+    type: string,
+    payload: Record<string, unknown>,
+    protocol = false,
+    touchSession = true,
+  ): EventFrame {
     entry.seq += 1;
-    entry.updatedAt = Date.now();
+    if (touchSession) entry.updatedAt = Date.now();
     const frame: EventFrame = {
       type,
       seq: entry.seq,
@@ -166,9 +206,9 @@ export class PiBridge {
       ...(model ? { model: model as never } : {}),
     });
     const entry = this.registerSession(session, sessionManager.getSessionFile(), cwd);
-    if (input.title) {
-      entry.title = input.title;
-      this.setMeta(entry.id, { title: input.title });
+    if (!isDefaultSessionTitle(input.title)) {
+      entry.title = input.title?.trim();
+      this.setMeta(entry.id, { title: entry.title });
     }
     return entry;
   }
@@ -187,7 +227,105 @@ export class PiBridge {
       modelRuntime: this.modelRuntime,
       sessionManager,
     });
-    return this.registerSession(session, info.file, cwd);
+    const entry = this.registerSession(session, info.file, cwd, {
+      createdAt: info.createdAt,
+      updatedAt: info.updatedAt,
+      lastPrompt: info.firstMessage || undefined,
+      parentSessionId: info.parentSessionId,
+      childSessionKind: info.childSessionKind,
+    });
+    if (isDefaultSessionTitle(entry.title)) entry.title = undefined;
+    return entry;
+  }
+
+  /** Clone the source session's active path into a new native pi session. */
+  async forkSession(
+    sessionId: string,
+    title?: string,
+    childSessionKind: 'fork' | 'side_chat' = 'fork',
+  ): Promise<BridgeSession> {
+    const source = await this.openSession(sessionId);
+    if (source.session.isStreaming || source.runningTools.size > 0) {
+      throw new SessionBusyError(sessionId);
+    }
+    if (!source.file || !existsSync(source.file)) {
+      throw new SessionNotPersistedError(sessionId);
+    }
+
+    const sessionManager = SessionManager.forkFrom(
+      source.file,
+      source.cwd,
+      dirname(source.file),
+    );
+    return this.registerForkedSession(source, sessionManager, title, childSessionKind);
+  }
+
+  /**
+   * Fork from a persisted message.
+   *
+   * User message: branch right before it, so the question can be re-asked with
+   * its preceding context intact. Assistant message: branch right after it, so
+   * the completed reply becomes the new conversation's latest state.
+   */
+  async forkSessionFromEntry(sessionId: string, entryId: string, title?: string): Promise<BridgeSession> {
+    const source = await this.openSession(sessionId);
+    if (source.session.isStreaming || source.runningTools.size > 0) {
+      throw new SessionBusyError(sessionId);
+    }
+    if (!source.file || !existsSync(source.file)) {
+      throw new SessionNotPersistedError(sessionId);
+    }
+    const forkPoint = source.session.sessionManager.getEntry(entryId);
+    if (
+      forkPoint?.type !== 'message'
+      || (forkPoint.message.role !== 'user' && forkPoint.message.role !== 'assistant')
+    ) {
+      throw new SessionForkPointError(entryId);
+    }
+
+    // Branching at the entry itself keeps it; branching at its parent drops it.
+    const branchAt = forkPoint.message.role === 'assistant' ? forkPoint.id : forkPoint.parentId;
+    let sessionManager: SessionManager;
+    if (branchAt === null) {
+      sessionManager = SessionManager.create(source.cwd, dirname(source.file));
+      sessionManager.newSession({ parentSession: source.file });
+    } else {
+      const sourceManager = SessionManager.open(source.file, dirname(source.file));
+      const forkedFile = sourceManager.createBranchedSession(branchAt);
+      if (!forkedFile) throw new SessionNotPersistedError(sessionId);
+      sessionManager = SessionManager.open(forkedFile, dirname(source.file));
+    }
+    return this.registerForkedSession(source, sessionManager, title, 'fork');
+  }
+
+  private async registerForkedSession(
+    source: BridgeSession,
+    sessionManager: SessionManager,
+    title: string | undefined,
+    childSessionKind: 'fork' | 'side_chat',
+  ): Promise<BridgeSession> {
+    const { session } = await createAgentSession({
+      cwd: source.cwd,
+      agentDir: this.agentDir(),
+      modelRuntime: this.modelRuntime,
+      sessionManager,
+    });
+    const now = new Date();
+    const entry = this.registerSession(session, sessionManager.getSessionFile(), source.cwd, {
+      createdAt: now,
+      updatedAt: now,
+      lastPrompt: source.lastPrompt,
+      parentSessionId: source.id,
+      childSessionKind,
+    });
+    const requestedTitle = title?.trim();
+    entry.title = requestedTitle || this.toWireSession(source).title;
+    entry.session.setSessionName(entry.title);
+    this.setMeta(entry.id, { title: entry.title, childSessionKind });
+    this.emit(entry, 'session.meta.updated', {
+      patch: { title: entry.title, parentSessionId: source.id, childSessionKind },
+    });
+    return entry;
   }
 
   /** Adopt an externally constructed AgentSession (used by tests). */
@@ -195,7 +333,18 @@ export class PiBridge {
     return this.registerSession(session, file, cwd);
   }
 
-  private registerSession(session: AgentSession, file: string | undefined, cwd: string): BridgeSession {
+  private registerSession(
+    session: AgentSession,
+    file: string | undefined,
+    cwd: string,
+    restored?: {
+      createdAt: Date;
+      updatedAt: Date;
+      lastPrompt?: string;
+      parentSessionId?: string;
+      childSessionKind?: 'fork' | 'side_chat';
+    },
+  ): BridgeSession {
     const id = session.sessionId;
     const existing = this.sessions.get(id);
     if (existing) return existing;
@@ -211,10 +360,12 @@ export class PiBridge {
       runningTools: new Map(),
       approvals: new Map(),
       openedAt: Date.now(),
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: restored?.createdAt.getTime() ?? Date.now(),
+      updatedAt: restored?.updatedAt.getTime() ?? Date.now(),
       title: meta.title,
-      lastPrompt: undefined,
+      lastPrompt: restored?.lastPrompt,
+      parentSessionId: restored?.parentSessionId,
+      childSessionKind: restored?.childSessionKind,
       archived: meta.archived ?? false,
     };
     this.sessions.set(id, entry);
@@ -261,7 +412,7 @@ export class PiBridge {
       },
     });
 
-    this.emit(entry, 'event.session.created', this.toWireSession(entry) as unknown as Record<string, unknown>, true);
+    this.emit(entry, 'event.session.created', this.toWireSession(entry) as unknown as Record<string, unknown>, true, false);
     return entry;
   }
 
@@ -294,10 +445,28 @@ export class PiBridge {
   // Session queries
   // -------------------------------------------------------------------------
 
-  private async findDiskSession(sessionId: string): Promise<{ file: string; cwd: string } | null> {
+  private async findDiskSession(sessionId: string): Promise<{
+    file: string;
+    cwd: string;
+    firstMessage: string;
+    parentSessionId?: string;
+    childSessionKind?: 'fork' | 'side_chat';
+    createdAt: Date;
+    updatedAt: Date;
+  } | null> {
     const all = await this.listSessions();
     const hit = all.find((s) => s.id === sessionId);
-    return hit ? { file: hit.file, cwd: hit.cwd } : null;
+    return hit
+      ? {
+          file: hit.file,
+          cwd: hit.cwd,
+          firstMessage: hit.firstMessage,
+          parentSessionId: hit.parentSessionId,
+          childSessionKind: hit.childSessionKind,
+          createdAt: hit.createdAt,
+          updatedAt: hit.updatedAt,
+        }
+      : null;
   }
 
   /** Live + on-disk pi sessions, newest first. */
@@ -305,6 +474,7 @@ export class PiBridge {
     const disk = await SessionManager.listAll().catch(() => []);
     const items: SessionListItem[] = [];
     const seen = new Set<string>();
+    const sessionIdByPath = new Map(disk.map((info) => [resolve(info.path), info.id]));
     for (const info of disk) {
       seen.add(info.id);
       const meta = this.meta[info.id] ?? {};
@@ -313,11 +483,21 @@ export class PiBridge {
         id: info.id,
         file: info.path,
         cwd: info.cwd || this.options.workspaceRoot,
-        title: meta.title ?? info.name ?? info.firstMessage.slice(0, 60) ?? 'Session',
+        title: !isDefaultSessionTitle(meta.title)
+          ? meta.title!
+          : !isDefaultSessionTitle(info.name)
+            ? info.name!
+            : titleFromPrompt(info.firstMessage) ?? 'Session',
         createdAt: info.created,
         updatedAt: info.modified,
         messageCount: info.messageCount,
         firstMessage: info.firstMessage,
+        parentSessionId: info.parentSessionPath
+          ? sessionIdByPath.get(resolve(info.parentSessionPath))
+          : undefined,
+        childSessionKind: info.parentSessionPath
+          ? meta.childSessionKind ?? 'fork'
+          : undefined,
         archived: meta.archived ?? false,
         busy: live?.session.isStreaming ?? false,
       });
@@ -328,17 +508,26 @@ export class PiBridge {
         id: entry.id,
         file: entry.file ?? '',
         cwd: entry.cwd,
-        title: entry.title ?? entry.lastPrompt?.slice(0, 60) ?? 'Session',
+        title: !isDefaultSessionTitle(entry.title)
+          ? entry.title!
+          : titleFromPrompt(entry.lastPrompt ?? '') ?? 'Session',
         createdAt: new Date(entry.createdAt),
         updatedAt: new Date(entry.updatedAt),
         messageCount: entry.session.messages.length,
         firstMessage: entry.lastPrompt ?? '',
+        parentSessionId: entry.parentSessionId,
+        childSessionKind: entry.childSessionKind,
         archived: entry.archived,
         busy: entry.session.isStreaming,
       });
     }
     items.sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime());
     return items;
+  }
+
+  async listChildSessions(sessionId: string): Promise<SessionListItem[]> {
+    await this.openSession(sessionId);
+    return (await this.listSessions()).filter((session) => session.parentSessionId === sessionId);
   }
 
   getEntry(sessionId: string): BridgeSession | undefined {
@@ -369,7 +558,9 @@ export class PiBridge {
     };
     return {
       id: entry.id,
-      title: entry.title ?? entry.lastPrompt?.slice(0, 60) ?? 'Session',
+      title: !isDefaultSessionTitle(entry.title)
+        ? entry.title!
+        : titleFromPrompt(entry.lastPrompt ?? '') ?? 'Session',
       created_at: new Date(entry.createdAt).toISOString(),
       updated_at: new Date(entry.updatedAt).toISOString(),
       busy: entry.session.isStreaming || pendingApproval,
@@ -378,7 +569,16 @@ export class PiBridge {
       archived: entry.archived,
       current_prompt_id: entry.translation.currentPromptId,
       last_prompt: entry.lastPrompt,
-      metadata: { cwd: entry.cwd },
+      metadata: {
+        cwd: entry.cwd,
+        ...(entry.parentSessionId && entry.childSessionKind === 'side_chat'
+          ? { parent_session_id: entry.parentSessionId }
+          : {}),
+        ...(entry.parentSessionId && entry.childSessionKind === 'fork'
+          ? { forked_from_session_id: entry.parentSessionId }
+          : {}),
+        ...(entry.childSessionKind ? { child_session_kind: entry.childSessionKind } : {}),
+      },
       agent_config: {
         model: model ? `${model.provider}/${model.id}` : '',
         thinking: entry.session.thinkingLevel,
@@ -407,7 +607,14 @@ export class PiBridge {
     pending_questions: unknown[];
   } {
     let promptCounter = 0;
-    const idOf = (_m: AgentMessage, index: number) => `msg_${entry.id.slice(0, 8)}_${index}`;
+    const entryIdByMessage = new Map<AgentMessage, string>();
+    for (const sessionEntry of entry.session.sessionManager.buildContextEntries()) {
+      if (sessionEntry.type === 'message') {
+        entryIdByMessage.set(sessionEntry.message, sessionEntry.id);
+      }
+    }
+    const idOf = (message: AgentMessage, index: number) =>
+      entryIdByMessage.get(message) ?? `msg_${entry.id.slice(0, 8)}_${index}`;
     const promptIdOf = (m: AgentMessage) => {
       if (m.role === 'user') promptCounter += 1;
       return `pr_snap_${promptCounter}`;
@@ -486,8 +693,9 @@ export class PiBridge {
     const userMessageId = newId('msg_');
     entry.translation.currentPromptId = promptId;
     entry.lastPrompt = text;
-    if (!entry.title) {
-      entry.title = text.slice(0, 60);
+    if (isDefaultSessionTitle(entry.title)) {
+      entry.title = titleFromPrompt(text)!;
+      entry.session.setSessionName(entry.title);
       this.setMeta(entry.id, { title: entry.title });
       this.emit(entry, 'session.meta.updated', { patch: { title: entry.title, lastPrompt: text } });
     }

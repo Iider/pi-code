@@ -4,7 +4,7 @@
 // translation fan-out, snapshot shape and the approval round-trip.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import type { AgentSessionEvent } from '@earendil-works/pi-coding-agent';
+import { SessionManager, type AgentSessionEvent } from '@earendil-works/pi-coding-agent';
 import { PiBridge } from '../src/bridge.ts';
 import { buildApp } from '../src/routes.ts';
 import { attachWebSocket } from '../src/ws.ts';
@@ -23,6 +23,10 @@ class MockAgentSession {
   promptCalls: string[] = [];
   aborted = false;
   setModelCalls: string[] = [];
+  sessionManager: Pick<SessionManager, 'buildContextEntries' | 'getEntry'> = {
+    buildContextEntries: () => [],
+    getEntry: () => undefined,
+  };
   agent = { state: { streamingMessage: undefined }, beforeToolCall: undefined as unknown };
 
   constructor(id: string) {
@@ -222,6 +226,122 @@ describe('REST wire contract', () => {
     expect(bad.status).toBe(400);
   });
 
+  it('forks a persisted pi session and exposes its native parent relationship', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const sessionDir = mkdtempSync(join(tmpdir(), 'pi-code-fork-test.'));
+    cleanupFns.push(async () => rmSync(sessionDir, { recursive: true, force: true }));
+
+    const manager = SessionManager.create(process.cwd(), sessionDir);
+    manager.newSession();
+    manager.appendMessage({ role: 'user', content: 'keep this context', timestamp: Date.now() });
+    manager.appendMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'context retained' }],
+      api: 'mock',
+      provider: 'mock',
+      model: 'mock-1',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    });
+    const secondUserEntryId = manager.appendMessage({
+      role: 'user',
+      content: 'replace this question',
+      timestamp: Date.now(),
+    });
+    const secondAssistantEntryId = manager.appendMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'replace this answer' }],
+      api: 'mock',
+      provider: 'mock',
+      model: 'mock-1',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    });
+    const source = new MockAgentSession(manager.getSessionId());
+    source.sessionManager = manager;
+    source.messages = manager.buildSessionContext().messages;
+    bridge.adoptSession(source as never, manager.getSessionFile(), process.cwd());
+
+    const sourceSnapshot = await api(`/sessions/${source.sessionId}/snapshot`);
+    const sourceSnapshotBody = (await sourceSnapshot.json()) as {
+      data: { messages: { items: { id: string; role: string }[] } };
+    };
+    expect(sourceSnapshotBody.data.messages.items).toContainEqual(
+      expect.objectContaining({ id: secondUserEntryId, role: 'user' }),
+    );
+    expect(sourceSnapshotBody.data.messages.items).toContainEqual(
+      expect.objectContaining({ id: secondAssistantEntryId, role: 'assistant' }),
+    );
+
+    const forkedResponse = await api(`/sessions/${source.sessionId}:fork`, {
+      method: 'POST',
+      body: JSON.stringify({ title: 'Forked session' }),
+    });
+    expect(forkedResponse.status).toBe(200);
+    const forkedBody = (await forkedResponse.json()) as {
+      data: { id: string; title: string; metadata: { forked_from_session_id?: string; child_session_kind?: string } };
+    };
+    expect(forkedBody.data.id).not.toBe(source.sessionId);
+    expect(forkedBody.data.title).toBe('Forked session');
+    expect(forkedBody.data.metadata.forked_from_session_id).toBe(source.sessionId);
+    expect(forkedBody.data.metadata.child_session_kind).toBe('fork');
+
+    const childrenResponse = await api(`/sessions/${source.sessionId}/children`);
+    const childrenBody = (await childrenResponse.json()) as {
+      data: { items: { id: string; metadata: { forked_from_session_id?: string } }[] };
+    };
+    expect(childrenBody.data.items).toContainEqual(
+      expect.objectContaining({
+        id: forkedBody.data.id,
+        metadata: expect.objectContaining({ forked_from_session_id: source.sessionId }),
+      }),
+    );
+
+    const fromEntryResponse = await api(`/sessions/${source.sessionId}:fork`, {
+      method: 'POST',
+      body: JSON.stringify({ entry_id: secondUserEntryId }),
+    });
+    expect(fromEntryResponse.status).toBe(200);
+    const fromEntryBody = (await fromEntryResponse.json()) as { data: { id: string } };
+    const fromEntry = bridge.getEntry(fromEntryBody.data.id);
+    const forkedTexts = fromEntry?.session.sessionManager.getEntries()
+      .filter((entry) => entry.type === 'message' && entry.message.role === 'user')
+      .map((entry) => {
+        if (entry.type !== 'message' || entry.message.role !== 'user') return '';
+        return typeof entry.message.content === 'string' ? entry.message.content : '';
+      }) ?? [];
+    expect(forkedTexts).toContain('keep this context');
+    expect(forkedTexts).not.toContain('replace this question');
+
+    // Forking from a completed assistant reply keeps the conversation through
+    // that reply, so the branch continues from the agent's latest answer.
+    const fromAssistantResponse = await api(`/sessions/${source.sessionId}:fork`, {
+      method: 'POST',
+      body: JSON.stringify({ entry_id: secondAssistantEntryId }),
+    });
+    expect(fromAssistantResponse.status).toBe(200);
+    const fromAssistantBody = (await fromAssistantResponse.json()) as { data: { id: string } };
+    const fromAssistant = bridge.getEntry(fromAssistantBody.data.id);
+    const assistantForkTexts = fromAssistant?.session.sessionManager.getEntries()
+      .filter((entry) => entry.type === 'message')
+      .map((entry) => {
+        if (entry.type !== 'message' || !('content' in entry.message)) return '';
+        const content = entry.message.content;
+        if (typeof content === 'string') return content;
+        if (!Array.isArray(content)) return '';
+        return content
+          .filter((part): part is { type: 'text'; text: string } => part.type === 'text')
+          .map((part) => part.text)
+          .join('');
+      }) ?? [];
+    expect(assistantForkTexts).toContain('replace this question');
+    expect(assistantForkTexts).toContain('replace this answer');
+  });
+
   it('fs endpoints serve real directory listings', async () => {
     const res = await api('/sessions/mock-session-1/fs:list', { method: 'POST', body: JSON.stringify({ path: 'src' }) });
     const body = (await res.json()) as { data: { items: { name: string }[] } };
@@ -296,6 +416,10 @@ describe('WS sync protocol', () => {
     ws.send(JSON.stringify({ type: 'client_hello', id: 'c1', payload: { client_id: 't', subscriptions: ['mock-session-1'], cursors: {} } }));
     await wait('ack');
 
+    // The copied Web UI creates untitled conversations with this placeholder.
+    // The first real prompt must replace it with a useful session title.
+    await bridge.renameSession('mock-session-1', 'Session');
+
     // Mock the tool execution: when the approval gate approves, the loop
     // continues with tool result + assistant completion.
     const submitted = await api('/sessions/mock-session-1/prompts', {
@@ -305,6 +429,10 @@ describe('WS sync protocol', () => {
     const submitBody = (await submitted.json()) as { data: { prompt_id: string; user_message_id: string; status: string } };
     expect(submitBody.data.status).toBe('running');
     expect(mock.promptCalls).toContain('run a command');
+
+    const session = await api('/sessions/mock-session-1');
+    const sessionBody = (await session.json()) as { data: { title: string } };
+    expect(sessionBody.data.title).toBe('run a command');
 
     const promptSubmitted = await wait('prompt.submitted');
     expect(promptSubmitted.payload.promptId).toBe(submitBody.data.prompt_id);

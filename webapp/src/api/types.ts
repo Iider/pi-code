@@ -85,11 +85,10 @@ export interface AppSession {
    * undefined and the composable maps sessions to workspaces by cwd === root.
    */
   workspaceId?: string;
-  /**
-   * Set on a child ("side chat") session — the id of the parent it was forked
-   * from. Used to keep child sessions out of the main session list.
-   */
+  /** Set on any native pi child session — the id of its source session. */
   parentSessionId?: string;
+  /** Only side chats stay out of the main list; user-created forks remain visible. */
+  childSessionKind?: 'fork' | 'side_chat';
 }
 
 /**

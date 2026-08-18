@@ -108,6 +108,13 @@ export function toAppSession(wire: WireSession): AppSession {
     parentSessionId:
       typeof wire.metadata['parent_session_id'] === 'string'
         ? wire.metadata['parent_session_id']
+        : typeof wire.metadata['forked_from_session_id'] === 'string'
+          ? wire.metadata['forked_from_session_id']
+          : undefined,
+    childSessionKind:
+      wire.metadata['child_session_kind'] === 'fork' ||
+      wire.metadata['child_session_kind'] === 'side_chat'
+        ? wire.metadata['child_session_kind']
         : undefined,
   };
 }

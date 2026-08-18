@@ -18,7 +18,7 @@ export default {
   options: '选项',
   copySessionId: '复制 Session ID',
   renameSession: '重命名',
-  forkSession: '分叉会话',
+  forkSession: '复制为新会话',
   archiveSession: '归档',
   exportSession: '导出会话',
 };

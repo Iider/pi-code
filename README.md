@@ -171,6 +171,8 @@ server/vendor/protocol/  kimi-code's protocol package (reference schemas)
 - [Pi agent 模型配置架构与验收](docs/model-configuration-plan.md)：Provider、认证、默认模型、
   数据完整性、WebUI 适配和验收清单。
 - [桌面端架构与维护](docs/desktop.md)：启动链路、macOS 顶栏坐标、拖动、通知、打包和验收。
+- [会话分支开发方案](docs/session-branching-plan.md)：完整会话分叉、会话树和 Git worktree 的
+  三阶段边界、接口与验收标准。
 
 ## Attribution & license
 

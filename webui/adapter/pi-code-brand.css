@@ -7,8 +7,10 @@
   display: none;
 }
 
-.ch-brand::before {
+.ch-brand::before,
+.side-footer .user-menu-trigger::before {
   display: grid;
+  flex: none;
   place-items: center;
   width: 30px;
   height: 20px;
@@ -77,24 +79,12 @@
   gap: 10px;
 }
 
-.side-footer .user-menu-trigger > svg {
-  display: none;
+.side-footer {
+  padding-block: 6px;
 }
 
-.side-footer .user-menu-trigger::before {
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  background: var(--color-accent);
-  color: var(--color-text-on-accent);
-  content: "π";
-  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
-  font-size: 15px;
-  font-weight: var(--weight-semibold);
-  line-height: 1;
+.side-footer .user-menu-trigger > svg {
+  display: none;
 }
 
 .side-footer .user-menu-trigger > span {
@@ -128,6 +118,75 @@
 .side-footer .user-menu-trigger[aria-expanded="true"]::after {
   color: var(--color-text);
   transform: rotate(90deg);
+}
+
+/* The frozen upstream WebUI has no message-level fork action. Keep the
+ * adapter button visually identical to the neighbouring undo/copy controls. */
+.pi-fork-from-message {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.pi-fork-from-message svg {
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.pi-fork-from-message:hover:not(:disabled) {
+  background: var(--color-hover);
+  color: var(--color-accent);
+  opacity: 1;
+}
+
+.pi-fork-from-message:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+
+.pi-fork-from-message:disabled {
+  cursor: wait;
+  opacity: 0.45;
+}
+
+.pi-fork-from-message.is-loading svg {
+  animation: pi-code-fork-pulse 0.8s ease-in-out infinite alternate;
+}
+
+.pi-fork-toast {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: var(--z-toast);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: 10px 14px;
+  border: 0.5px solid var(--color-danger-bd);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-danger);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
+@keyframes pi-code-fork-pulse {
+  from { transform: scale(0.86); }
+  to { transform: scale(1.04); }
 }
 
 /* macOS draws the native traffic lights over the WebView. The desktop shell
