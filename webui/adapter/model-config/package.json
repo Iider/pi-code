@@ -1,0 +1,6 @@
+{
+  "name": "pi-code-model-config-adapter",
+  "private": true,
+  "type": "module",
+  "scripts": { "build": "node build.mjs" }
+}

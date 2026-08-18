@@ -1,8 +1,6 @@
-/* Pi Code's deliberately small product-brand layer.
- *
- * Layout, controls, motion, and interaction remain the upstream WebUI's own
- * implementation. Only the two mascot surfaces are replaced here because the
- * upstream source is not published with the distributable bundle.
+/* Pi Code's visual compatibility layer for the upstream WebUI bundle.
+ * Product branding, desktop-only window chrome, and pi-native OAuth surfaces
+ * live here; conversation layout and core interactions remain upstream-owned.
  */
 
 .ch-brand .ch-logo {
@@ -70,4 +68,458 @@
   .doodle-host.empty-doodle {
     min-width: min(340px, 80vw);
   }
+}
+
+/* The upstream footer is an account entry. Pi Code has no product account;
+ * keep the same interaction but present it as the stable pi agent settings
+ * entry. The active model remains visible in the composer. */
+.side-footer .user-menu-trigger {
+  gap: 10px;
+}
+
+.side-footer .user-menu-trigger > svg {
+  display: none;
+}
+
+.side-footer .user-menu-trigger::before {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+  content: "π";
+  font-family: ui-monospace, "SFMono-Regular", Consolas, monospace;
+  font-size: 15px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+.side-footer .user-menu-trigger > span {
+  min-width: 0;
+  flex: 1;
+  color: var(--color-text);
+  font-size: var(--ui-font-size-sm);
+  font-weight: var(--weight-medium);
+  line-height: var(--leading-tight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-footer .user-menu-trigger::after {
+  flex: none;
+  color: var(--color-text-faint);
+  content: "›";
+  font-size: 18px;
+  font-weight: var(--weight-regular);
+  line-height: 1;
+  transform: rotate(-90deg);
+  transition: color var(--duration-base) var(--ease-out), transform var(--duration-base) var(--ease-out);
+}
+
+.side-footer .user-menu-trigger:hover::after {
+  color: var(--color-text-muted);
+  transform: translateY(-1px) rotate(-90deg);
+}
+
+.side-footer .user-menu-trigger[aria-expanded="true"]::after {
+  color: var(--color-text);
+  transform: rotate(90deg);
+}
+
+/* macOS draws the native traffic lights over the WebView. The desktop shell
+ * uses one compact titlebar row and leaves product branding to the app icon;
+ * the browser UI keeps the upstream sidebar brand unchanged. */
+html.pi-code-desktop {
+  --panel-head-h: 42px;
+}
+
+html.pi-code-desktop .side .ch {
+  min-height: 42px;
+  padding: 0 var(--space-3) 0 84px;
+  -webkit-app-region: drag;
+}
+
+html.pi-code-desktop .side .ch-brand {
+  display: none;
+}
+
+html.pi-code-desktop .chat-header {
+  -webkit-app-region: drag;
+}
+
+/* The upstream macOS offsets depend on an app-level class that is not always
+ * present in the packaged WebView. Anchor the collapsed controls to Pi Code's
+ * desktop marker so they never overlap the traffic lights. */
+html.pi-code-desktop .app.sidebar-collapsed .sidebar-toggle-btn {
+  top: 8px;
+  left: 84px;
+}
+
+html.pi-code-desktop .app.sidebar-collapsed .new-chat-btn {
+  top: 8px;
+  left: 112px;
+}
+
+html.pi-code-desktop .app.sidebar-collapsed .chat-header {
+  padding-left: 148px;
+}
+
+html.pi-code-desktop .side .ch-brand,
+html.pi-code-desktop .side .ch-logo,
+html.pi-code-desktop .side .ch button,
+html.pi-code-desktop .chat-header button,
+html.pi-code-desktop .chat-header input {
+  -webkit-app-region: no-drag;
+}
+
+/* Keep the upstream connection state, but make the visible single-window
+ * transition continuous with Pi Code's bundled startup page. A visible
+ * WKWebView is required on macOS; hidden WebViews can be suspended before
+ * Vue finishes initialization. */
+html.pi-code-desktop .gload-logo {
+  display: none;
+}
+
+html.pi-code-desktop .gload-box::before {
+  display: grid;
+  place-items: center;
+  width: 54px;
+  height: 54px;
+  border-radius: 14px;
+  background: var(--color-accent);
+  box-shadow: 0 10px 28px color-mix(in srgb, var(--color-accent) 22%, transparent);
+  color: var(--color-text-on-accent);
+  content: "π";
+  font-family: ui-monospace, "SFMono-Regular", monospace;
+  font-size: 28px;
+  font-weight: var(--weight-semibold);
+  line-height: 1;
+}
+
+html.pi-code-desktop .gload-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  font-family: var(--font-ui);
+  letter-spacing: normal;
+}
+
+html.pi-code-desktop .gload-text::before {
+  color: var(--color-text);
+  content: "Pi Code";
+  font-size: 19px;
+  font-weight: var(--weight-semibold);
+}
+
+/* Pi-native OAuth bridge. The upstream distribution has no public component
+ * source for multi-provider OAuth, so this small surface follows its dialog,
+ * form, button, and motion tokens without modifying the upstream bundle. */
+
+.af-entry[data-pi-oauth-provider] .af-entry-reason {
+  color: var(--color-accent);
+}
+
+.pi-oauth-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: calc(var(--z-modal, 400) + 1);
+  display: grid;
+  place-items: center;
+  padding: var(--space-8, 32px);
+  background: var(--color-scrim, rgba(0, 0, 0, 0.24));
+}
+
+.pi-oauth-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: min(680px, calc(100vh - 64px));
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-xl, 16px);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  box-shadow: var(--shadow-xl);
+  font-family: var(--font-ui);
+}
+
+.pi-oauth-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-3, 12px);
+  padding: var(--space-5, 20px) var(--space-5, 20px) var(--space-3, 12px);
+}
+
+.pi-oauth-head h3,
+.pi-oauth-state h4,
+.pi-oauth-prompt h4 {
+  margin: 0;
+  color: var(--color-text);
+  font-weight: var(--weight-medium, 500);
+}
+
+.pi-oauth-head h3 {
+  font-size: var(--text-lg, 16px);
+}
+
+.pi-oauth-head p,
+.pi-oauth-state p,
+.pi-oauth-context p,
+.pi-oauth-progress {
+  margin: var(--space-1, 4px) 0 0;
+  color: var(--color-text-muted);
+  font-size: var(--text-sm, 13px);
+  line-height: var(--leading-normal, 1.5);
+}
+
+.pi-oauth-close {
+  position: relative;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border: 0;
+  border-radius: var(--radius-sm, 6px);
+  background: transparent;
+  color: var(--color-text-muted);
+  cursor: pointer;
+}
+
+.pi-oauth-close::before,
+.pi-oauth-close::after {
+  position: absolute;
+  top: 14px;
+  left: 8px;
+  width: 14px;
+  height: 1.5px;
+  border-radius: var(--radius-full, 999px);
+  background: currentColor;
+  content: '';
+}
+
+.pi-oauth-close::before { transform: rotate(45deg); }
+.pi-oauth-close::after { transform: rotate(-45deg); }
+.pi-oauth-close:hover { background: var(--color-hover); color: var(--color-text); }
+
+.pi-oauth-close:focus-visible,
+.pi-oauth-button:focus-visible,
+.pi-oauth-option:focus-visible,
+.pi-oauth-link:focus-visible,
+.pi-oauth-input-row input:focus-visible {
+  outline: none;
+  box-shadow: var(--focus-ring);
+}
+
+.pi-oauth-body {
+  min-height: 190px;
+  overflow: auto;
+  padding: var(--space-3, 12px) var(--space-5, 20px) var(--space-5, 20px);
+}
+
+.pi-oauth-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-2, 8px);
+  min-height: 62px;
+  padding: var(--space-3, 12px) var(--space-5, 20px) var(--space-4, 16px);
+  border-top: 1px solid var(--color-line);
+}
+
+.pi-oauth-button {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 var(--space-3, 12px);
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm, 6px);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+  text-decoration: none;
+  cursor: pointer;
+  transition: background var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out);
+}
+
+.pi-oauth-button--primary {
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-text-on-accent);
+}
+
+.pi-oauth-button--primary:hover {
+  border-color: var(--color-accent-hover);
+  background: var(--color-accent-hover);
+}
+
+.pi-oauth-button--secondary {
+  border-color: var(--color-line-strong);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+}
+
+.pi-oauth-button--secondary:hover { background: var(--color-hover); }
+.pi-oauth-button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.pi-oauth-state {
+  min-height: 170px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2, 8px);
+  text-align: center;
+}
+
+.pi-oauth-status-icon {
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full, 999px);
+  background: var(--color-success-soft);
+  color: var(--color-success);
+  font-size: var(--text-xl, 18px);
+  font-weight: var(--weight-medium, 500);
+}
+
+.pi-oauth-state--error .pi-oauth-status-icon {
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+}
+
+.pi-oauth-spinner {
+  width: 18px;
+  height: 18px;
+  border: 2px solid var(--color-line-strong);
+  border-top-color: var(--color-accent);
+  border-radius: var(--radius-full, 999px);
+  animation: pi-oauth-spin 0.8s linear infinite;
+}
+
+@keyframes pi-oauth-spin { to { transform: rotate(360deg); } }
+
+.pi-oauth-wait {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+  margin-top: var(--space-4, 16px);
+  color: var(--color-text-muted);
+  font-size: var(--text-sm, 13px);
+}
+
+.pi-oauth-prompt {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3, 12px);
+}
+
+.pi-oauth-prompt h4,
+.pi-oauth-prompt label {
+  color: var(--color-text);
+  font-size: var(--text-base, 14px);
+  font-weight: var(--weight-medium, 500);
+}
+
+.pi-oauth-options {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md, 8px);
+}
+
+.pi-oauth-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-1, 4px);
+  padding: var(--space-3, 12px);
+  border: 0;
+  border-bottom: 1px solid var(--color-line);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pi-oauth-option:last-child { border-bottom: 0; }
+.pi-oauth-option:hover { background: var(--color-hover); }
+.pi-oauth-option small { color: var(--color-text-muted); font-size: var(--text-xs, 12px); }
+
+.pi-oauth-context {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--space-3, 12px);
+  margin-bottom: var(--space-4, 16px);
+  padding: var(--space-4, 16px);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-md, 8px);
+  background: var(--color-surface-sunken);
+}
+
+.pi-oauth-code-row,
+.pi-oauth-input-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2, 8px);
+}
+
+.pi-oauth-code-row code {
+  flex: 1;
+  padding: var(--space-2, 8px) var(--space-3, 12px);
+  border: 1px solid var(--color-line);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--text-lg, 16px);
+  letter-spacing: 0.08em;
+  text-align: center;
+}
+
+.pi-oauth-input-row input {
+  flex: 1;
+  min-width: 0;
+  height: 36px;
+  padding: 0 var(--space-3, 12px);
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm, 6px);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+  font-size: var(--text-sm, 13px);
+}
+
+.pi-oauth-link {
+  color: var(--color-accent);
+  font-size: var(--text-sm, 13px);
+  text-underline-offset: 3px;
+}
+
+.pi-oauth-link:hover { text-decoration: underline; }
+
+@media (max-width: 640px) {
+  .pi-oauth-overlay {
+    align-items: end;
+    padding: 0;
+  }
+
+  .pi-oauth-dialog {
+    width: 100%;
+    max-height: calc(100vh - 24px);
+    border-radius: var(--radius-xl, 16px) var(--radius-xl, 16px) 0 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pi-oauth-spinner { animation-duration: 0.001ms; }
 }

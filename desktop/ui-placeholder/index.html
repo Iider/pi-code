@@ -1,10 +1,133 @@
 <!doctype html>
-<html>
-  <head><meta charset="utf-8" /><title>pi-code</title></head>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Pi Code</title>
+    <style>
+      :root {
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        color: #1d1d1f;
+        background: #f7f8fa;
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          color: #f5f5f7;
+          background: #121212;
+        }
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100vh;
+        margin: 0;
+        display: grid;
+        place-items: center;
+        -webkit-user-select: none;
+        user-select: none;
+      }
+
+      .titlebar-drag-region {
+        position: fixed;
+        z-index: 1;
+        top: 0;
+        right: 0;
+        left: 0;
+        height: 54px;
+      }
+
+      main {
+        display: grid;
+        justify-items: center;
+        gap: 14px;
+        transform: translateY(-3vh);
+      }
+
+      .logo {
+        display: grid;
+        place-items: center;
+        width: 54px;
+        height: 54px;
+        border-radius: 14px;
+        background: #2388ff;
+        color: #fff;
+        font: 600 28px/1 ui-monospace, "SFMono-Regular", monospace;
+        box-shadow: 0 10px 28px rgb(35 136 255 / 22%);
+      }
+
+      h1 {
+        margin: 4px 0 0;
+        font-size: 19px;
+        font-weight: 600;
+        letter-spacing: -0.01em;
+      }
+
+      p {
+        margin: 0;
+        color: color-mix(in srgb, currentColor 55%, transparent);
+        font-size: 13px;
+      }
+
+      .progress {
+        width: 132px;
+        height: 3px;
+        margin-top: 9px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: color-mix(in srgb, currentColor 10%, transparent);
+      }
+
+      .progress::after {
+        display: block;
+        width: 42%;
+        height: 100%;
+        border-radius: inherit;
+        background: #2388ff;
+        content: "";
+        animation: loading 1.1s ease-in-out infinite;
+      }
+
+      [data-state="error"] .progress {
+        display: none;
+      }
+
+      [data-state="error"] p {
+        max-width: 320px;
+        color: #df4b4b;
+        text-align: center;
+      }
+
+      @keyframes loading {
+        from {
+          transform: translateX(-110%);
+        }
+        to {
+          transform: translateX(350%);
+        }
+      }
+    </style>
+  </head>
   <body>
-    <!-- Placeholder: the real UI is served by the pi-code-server sidecar and
-         loaded via WebviewUrl::External. This dir only satisfies Tauri's
-         frontendDist requirement. -->
-    <p>pi-code is starting…</p>
+    <div class="titlebar-drag-region" data-tauri-drag-region="deep" aria-hidden="true"></div>
+    <main>
+      <div class="logo" aria-hidden="true">π</div>
+      <h1>Pi Code</h1>
+      <p id="status">正在启动本地服务…</p>
+      <div class="progress" aria-hidden="true"></div>
+    </main>
+    <script>
+      window.updateStartupStatus = function (message) {
+        document.getElementById("status").textContent = message;
+      };
+      window.showStartupError = function (message) {
+        document.documentElement.dataset.state = "error";
+        document.getElementById("status").textContent = message;
+      };
+    </script>
   </body>
 </html>

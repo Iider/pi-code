@@ -7,7 +7,7 @@
     "frontendDist": "../ui-placeholder"
   },
   "app": {
-    "withGlobalTauri": false,
+    "withGlobalTauri": true,
     "windows": [],
     "security": {
       "csp": null
@@ -26,6 +26,9 @@
     "externalBin": ["binaries/pi-code-server"],
     "resources": {
       "resources/webapp-dist": "webapp-dist"
+    },
+    "macOS": {
+      "signingIdentity": "-"
     }
   }
 }

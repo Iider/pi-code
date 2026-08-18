@@ -10,7 +10,12 @@ import { PiBridge } from './bridge.ts';
 import { buildApp } from './routes.ts';
 import { attachWebSocket } from './ws.ts';
 import { loadOrCreateToken } from './token.ts';
+import { cacheControlForWebAsset } from './static-cache.ts';
 import type { ApprovalPolicy } from './approvals.ts';
+
+// Pi Code never sends installation attribution or usage telemetry. Set this
+// before creating any pi agent services so provider requests omit it as well.
+process.env['PI_TELEMETRY'] = '0';
 
 const args = process.argv.slice(2);
 function argValue(name: string): string | undefined {
@@ -47,7 +52,13 @@ async function main(): Promise<void> {
   });
 
   if (existsSync(webDist)) {
-    await app.register(fastifyStatic, { root: webDist, wildcard: false });
+    await app.register(fastifyStatic, {
+      root: webDist,
+      wildcard: false,
+      setHeaders(response, filePath) {
+        response.header('Cache-Control', cacheControlForWebAsset(filePath));
+      },
+    });
     app.setNotFoundHandler(async (request, reply) => {
       if ((request.raw.url ?? '').startsWith('/api/')) {
         reply.statusCode = 404;

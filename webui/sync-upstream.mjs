@@ -42,7 +42,7 @@ const productCopyReplacements = [
   ['Checking sign-in status…', 'Checking provider status…'],
   ['Sign-in polling failed repeatedly. Check the pi-code service and try again.', 'Provider status checks failed repeatedly. Check the pi-code service and try again.'],
   ['authBannerLogin:"Sign in"', 'authBannerLogin:"Configure"'],
-  ['notSignedIn:"Not signed in"', 'notSignedIn:"No model configured"'],
+  ['notSignedIn:"Not signed in"', 'notSignedIn:"Pi Agent"'],
   ['signIn:"Sign in"', 'signIn:"Configure"'],
   ['action:"Sign in"', 'action:"Configure"'],
   ['requiredTitle:"Sign in required"', 'requiredTitle:"Model configuration required"'],
@@ -69,7 +69,10 @@ const productCopyReplacements = [
   ['登录轮询连续失败，请检查 pi-code 服务后重试', '模型服务状态检查连续失败，请检查 pi-code 服务后重试'],
   ['使用 pi agent 模型服务登录后即可继续。', '配置可用的 pi agent 模型服务后即可继续。'],
   ['authBannerLogin:"登录"', 'authBannerLogin:"配置"'],
-  ['notSignedIn:"未登录"', 'notSignedIn:"模型未配置"'],
+  ['notSignedIn:"未登录"', 'notSignedIn:"Pi Agent"'],
+  ['permissionManual:"逐条确认"', 'permissionManual:"逐项确认"'],
+  ['permissionYolo:"自动通过"', 'permissionYolo:"风险确认"'],
+  ['permissionAuto:"完全自主"', 'permissionAuto:"无需确认"'],
   ['signIn:"登录"', 'signIn:"配置"'],
   ['action:"登录"', 'action:"配置"'],
   ['requiredTitle:"请先登录"', 'requiredTitle:"请先配置模型"'],
@@ -107,11 +110,15 @@ for (const file of await walk(output)) {
 const indexPath = join(output, 'index.html');
 const indexHtml = await readFile(indexPath, 'utf8');
 const brandLink = '    <link rel="stylesheet" href="/pi-code-brand.css">';
-if (!indexHtml.includes(brandLink)) {
-  await writeFile(indexPath, indexHtml.replace('  </head>', `${brandLink}\n  </head>`));
-}
+const adapterScript = '    <script type="module" src="/model-config.js"></script>';
+const headMarker = '  </head>';
+const matches = indexHtml.split(headMarker).length - 1;
+if (matches !== 1) throw new Error(`Expected exactly one </head> injection point, found ${matches}`);
+const additions = [brandLink, adapterScript].filter((line) => !indexHtml.includes(line));
+await writeFile(indexPath, indexHtml.replace(headMarker, `${additions.join('\n')}\n${headMarker}`));
 
 await cp(join(here, 'adapter', 'pi-code-brand.css'), join(output, 'pi-code-brand.css'));
+await cp(join(here, 'adapter', 'model-config', 'dist', 'model-config.js'), join(output, 'model-config.js'));
 await cp(join(here, '..', 'webapp', 'public', 'favicon.ico'), join(output, 'favicon.ico'));
 
 console.log(`Synced and branded ${basename(source)} into ${output}`);

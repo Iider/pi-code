@@ -9,12 +9,15 @@ import { createHash } from 'node:crypto';
 import { PiBridge, workspaceIdFor, workspaceName, SessionNotFoundError } from './bridge.ts';
 import { ErrorCodes, fail, newRequestId, ok } from './envelope.ts';
 import { checkToken } from './token.ts';
+import { ModelConfigurationService } from './models/configuration-service.ts';
+import { ConfigurationError, redactText } from './models/errors.ts';
 
 interface RouteContext {
   bridge: PiBridge;
   token: string;
   bypassAuth: boolean;
   workspaceRoots: Set<string>;
+  modelConfiguration?: ModelConfigurationService;
 }
 
 /** Split "/sessions/<id>:<action>" style segments. */
@@ -35,6 +38,28 @@ async function sendOk(reply: FastifyReply, data: unknown, requestId: string): Pr
 export function buildApp(ctx: RouteContext): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
   const { bridge } = ctx;
+  const modelConfiguration = ctx.modelConfiguration ?? new ModelConfigurationService(bridge.getModelRuntime());
+
+  app.setErrorHandler(async (error, _request, reply) => {
+    const requestId = newRequestId();
+    if (error instanceof ConfigurationError) {
+      reply.statusCode = error.status;
+      await reply.send(fail(error.code, error.message, requestId));
+      return;
+    }
+    const fastifyError = error as { statusCode?: unknown; message?: unknown };
+    const status = typeof fastifyError.statusCode === 'number'
+      && fastifyError.statusCode >= 400
+      && fastifyError.statusCode < 500
+      ? fastifyError.statusCode
+      : 500;
+    reply.statusCode = status;
+    const code = status === 401
+      ? ErrorCodes.UNAUTHORIZED
+      : status < 500 ? ErrorCodes.VALIDATION : ErrorCodes.INTERNAL;
+    const message = status < 500 ? redactText(String(fastifyError.message ?? 'Bad request')) : 'Internal server error';
+    await reply.send(fail(code, message, requestId));
+  });
 
   // --- auth hook -----------------------------------------------------------
   app.addHook('onRequest', async (request: FastifyRequest, reply: FastifyReply) => {
@@ -85,62 +110,119 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   });
 
   app.get('/api/v1/auth', async (_req, reply) => {
-    const auth = await bridge.authStatus();
+    const auth = await modelConfiguration.authStatus();
     await sendOk(reply, { ready: auth.ready, providers_count: auth.providers_count, default_model: auth.default_model, managed_provider: null }, newRequestId());
   });
 
-  // --- oauth: pi auth is configured on disk; report authenticated ----------
-  app.post('/api/v1/oauth/login', async (_req, reply) => {
-    const auth = await bridge.authStatus();
-    if (auth.ready) {
-      await sendOk(reply, { flow_id: newRequestId(), provider: 'pi', status: 'authenticated' }, newRequestId());
-    } else {
-      await sendOk(reply, { flow_id: newRequestId(), provider: 'pi', status: 'pending', verification_uri: 'https://pi.dev/docs', verification_uri_complete: '', user_code: '', expires_in: 0, interval: 5, expires_at: new Date(Date.now() + 600_000).toISOString() }, newRequestId());
-    }
+  // --- oauth ---------------------------------------------------------------
+  app.post('/api/v1/oauth/login', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+    const body = (req.body ?? {}) as { provider?: string };
+    if (!body.provider) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'provider is required');
+    await sendOk(reply, modelConfiguration.startOAuth(body.provider), newRequestId());
   });
-  app.get('/api/v1/oauth/login', async (_req, reply) => {
-    const auth = await bridge.authStatus();
-    await sendOk(reply, { flow_id: 'flow', status: auth.ready ? 'authenticated' : 'expired', resolved_at: new Date().toISOString() }, newRequestId());
+  app.get('/api/v1/oauth/login', async (req, reply) => {
+    const { flow_id } = req.query as { flow_id?: string };
+    if (!flow_id) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'flow_id is required');
+    await sendOk(reply, modelConfiguration.getOAuth(flow_id), newRequestId());
   });
-  app.delete('/api/v1/oauth/login', async (_req, reply) => sendOk(reply, { cancelled: true, status: 'cancelled' }, newRequestId()));
-  app.post('/api/v1/oauth/logout', async (_req, reply) => sendOk(reply, { logged_out: false }, newRequestId()));
+  app.post('/api/v1/oauth/login/:id/respond', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const body = (req.body ?? {}) as { prompt_id?: string; value?: string };
+    if (!body.prompt_id || typeof body.value !== 'string') throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'prompt_id and value are required');
+    await sendOk(reply, modelConfiguration.answerOAuth(id, body.prompt_id, body.value), newRequestId());
+  });
+  app.delete('/api/v1/oauth/login', async (req, reply) => {
+    const { flow_id } = req.query as { flow_id?: string };
+    if (!flow_id) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'flow_id is required');
+    await sendOk(reply, modelConfiguration.cancelOAuth(flow_id), newRequestId());
+  });
+  app.post('/api/v1/oauth/logout', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+    const body = (req.body ?? {}) as { provider?: string };
+    if (!body.provider) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'provider is required');
+    await sendOk(reply, await modelConfiguration.logout(body.provider, 'oauth'), newRequestId());
+  });
 
   // --- models / providers / config -----------------------------------------
   app.get('/api/v1/models', async (_req, reply) => {
-    await sendOk(reply, { items: await bridge.listModels() }, newRequestId());
+    await sendOk(reply, { items: await modelConfiguration.models() }, newRequestId());
   });
 
   app.get('/api/v1/providers', async (_req, reply) => {
-    const models = await bridge.listModels();
-    const byProvider = new Map<string, string[]>();
-    for (const m of models) {
-      const list = byProvider.get(m.provider) ?? [];
-      list.push(m.model);
-      byProvider.set(m.provider, list);
-    }
-    await sendOk(
-      reply,
-      { items: [...byProvider.entries()].map(([id, models]) => ({ id, type: id, has_api_key: true, status: 'connected', models })) },
-      newRequestId(),
-    );
+    await sendOk(reply, { items: await modelConfiguration.providers() }, newRequestId());
+  });
+
+  app.post('/api/v1/providers', { bodyLimit: 1024 * 1024 }, async (req, reply) => {
+    await sendOk(reply, await modelConfiguration.addProvider((req.body ?? {}) as never), newRequestId());
+  });
+
+  app.get('/api/v1/providers/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await sendOk(reply, await modelConfiguration.provider(id), newRequestId());
+  });
+
+  app.put('/api/v1/providers/:id', { bodyLimit: 1024 * 1024 }, async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await sendOk(reply, await modelConfiguration.updateProvider(id, (req.body ?? {}) as never), newRequestId());
+  });
+
+  app.delete('/api/v1/providers/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await sendOk(reply, await modelConfiguration.deleteProvider(id), newRequestId());
+  });
+
+  app.get('/api/v1/catalog/providers', async (_req, reply) => {
+    await sendOk(reply, { items: modelConfiguration.catalogProviders() }, newRequestId());
+  });
+
+  app.get('/api/v1/catalog/providers/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    await sendOk(reply, modelConfiguration.catalogProvider(id), newRequestId());
+  });
+
+  app.post('/api/v1/providers::import_catalog', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+    await sendOk(reply, await modelConfiguration.importCatalogProvider((req.body ?? {}) as never), newRequestId());
+  });
+
+  app.post('/api/v1/providers/:idAction', async (req, reply) => {
+    const { id, action } = splitAction((req.params as { idAction: string }).idAction);
+    if (action !== 'refresh') throw new ConfigurationError(404, ErrorCodes.NOT_IMPLEMENTED, 'Unsupported provider action');
+    await sendOk(reply, await modelConfiguration.refresh([id]), newRequestId());
+  });
+  app.post('/api/v1/providers::refresh', async (_req, reply) => {
+    await sendOk(reply, await modelConfiguration.refresh(), newRequestId());
+  });
+  app.post('/api/v1/providers::refresh_oauth', async (_req, reply) => {
+    await sendOk(reply, await modelConfiguration.refresh(), newRequestId());
   });
 
   app.get('/api/v1/config', async (_req, reply) => {
-    const models = await bridge.listModels();
-    await sendOk(
-      reply,
-      {
-        providers: {},
-        default_provider: models[0]?.provider,
-        default_model: models[0] ? `${models[0].provider}/${models[0].model}` : undefined,
-        raw: {},
-      },
-      newRequestId(),
-    );
+    await sendOk(reply, await modelConfiguration.config(), newRequestId());
   });
 
-  app.post('/api/v1/config', async (req, reply) => {
-    await sendOk(reply, (req.body as object) ?? {}, newRequestId());
+  app.post('/api/v1/config', { bodyLimit: 1024 * 1024 }, async (req, reply) => {
+    await sendOk(reply, await modelConfiguration.updateConfig((req.body ?? {}) as Record<string, unknown>), newRequestId());
+  });
+
+  app.get('/api/v1/models-config', async (_req, reply) => {
+    await sendOk(reply, await modelConfiguration.store.read(), newRequestId());
+  });
+  app.put('/api/v1/models-config', { bodyLimit: 1024 * 1024 }, async (req, reply) => {
+    const body = (req.body ?? {}) as { document?: unknown; revision?: string };
+    if (typeof body.revision !== 'string' || !body.revision) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'revision is required');
+    await sendOk(reply, await modelConfiguration.saveModelsConfig(body.document, body.revision), newRequestId());
+  });
+  app.delete('/api/v1/models-config/providers/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const { revision } = req.query as { revision?: string };
+    if (!revision) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'revision is required');
+    await sendOk(reply, await modelConfiguration.deleteCustomProvider(id, revision), newRequestId());
+  });
+  app.post('/api/v1/models-config::discover', async (req, reply) => {
+    const body = (req.body ?? {}) as { provider?: string };
+    await sendOk(reply, await modelConfiguration.refresh(body.provider ? [body.provider] : undefined), newRequestId());
+  });
+  app.post('/api/v1/models-config::test', { bodyLimit: 32 * 1024 }, async (req, reply) => {
+    await sendOk(reply, await modelConfiguration.testModel((req.body ?? {}) as never), newRequestId());
   });
 
   // --- workspaces -----------------------------------------------------------
@@ -255,7 +337,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       await sendOk(reply, bridge.toWireSession(entry), requestId);
     } catch (error) {
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 
@@ -319,7 +401,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 
@@ -337,7 +419,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 
@@ -439,7 +521,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 
@@ -513,7 +595,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       await sendOk(reply, result, requestId);
     } catch (error) {
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 
@@ -543,7 +625,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       );
     } catch (error) {
       reply.statusCode = 500;
-      await reply.send(fail(ErrorCodes.INTERNAL, error instanceof Error ? error.message : String(error), requestId));
+      await reply.send(fail(ErrorCodes.INTERNAL, 'Internal server error', requestId));
     }
   });
 

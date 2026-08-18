@@ -109,6 +109,11 @@ export class PiBridge {
     this.modelRuntime = await ModelRuntime.create({});
   }
 
+  /** Shared canonical runtime used by sessions and model configuration. */
+  getModelRuntime(): ModelRuntime {
+    return this.modelRuntime;
+  }
+
   // -------------------------------------------------------------------------
   // Frames: seq allocation, ring buffer, fan-out
   // -------------------------------------------------------------------------
@@ -143,23 +148,6 @@ export class PiBridge {
     return getAgentDir();
   }
 
-  /**
-   * pi only flushes a session file once it contains an assistant message, so a
-   * freshly created session vanishes from disk listings on restart. Write the
-   * header line ourselves so the session is discoverable immediately.
-   */
-  private ensureSessionFileWritten(sessionManager: SessionManager): void {
-    try {
-      const file = sessionManager.getSessionFile();
-      if (!file || existsSync(file)) return;
-      const header = sessionManager.getHeader();
-      if (!header) return;
-      writeFileSync(file, `${JSON.stringify(header)}\n`);
-    } catch {
-      // Best effort — the session still works in-memory.
-    }
-  }
-
   private sessionDirFor(cwd: string): string {
     return SessionManager.create(cwd).getSessionDir();
   }
@@ -178,7 +166,6 @@ export class PiBridge {
       ...(model ? { model: model as never } : {}),
     });
     const entry = this.registerSession(session, sessionManager.getSessionFile(), cwd);
-    this.ensureSessionFileWritten(sessionManager);
     if (input.title) {
       entry.title = input.title;
       this.setMeta(entry.id, { title: input.title });

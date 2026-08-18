@@ -1,0 +1,17 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "desktop",
+  "description": "Allows the pi-code desktop window to use native title-bar interactions and system notifications.",
+  "windows": ["main"],
+  "local": true,
+  "remote": {
+    "urls": ["http://127.0.0.1:8766"]
+  },
+  "permissions": [
+    "core:window:allow-start-dragging",
+    "core:window:allow-internal-toggle-maximize",
+    "notification:allow-is-permission-granted",
+    "notification:allow-request-permission",
+    "notification:allow-notify"
+  ]
+}

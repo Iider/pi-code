@@ -35,10 +35,10 @@ The server listens on `127.0.0.1:8765` by default and serves the built WebUI
 from the same origin (kimi `web` style). The bearer token is generated on
 first run and stored at `~/.pi-code/server.token`.
 
-The UI opens straight to the conversation list — there is no kimi-style
-sign-in gate. pi provider credentials are read from `~/.pi/agent/auth.json`
-per request; if none are configured, prompts fail with an actionable error
-(`pi` CLI login) instead of blocking the UI.
+The UI opens straight to the conversation list. If no pi Provider is available,
+open **Settings → Providers** to add a built-in or custom Provider. API Key and
+OAuth providers can both be configured in the WebUI; Pi Code and the pi CLI
+share the same native configuration files.
 
 ### Server options
 
@@ -85,8 +85,9 @@ npm start -- --web-dist ../webapp/dist
 │   │  binary = Fastify + pi SDK, 65MB)                │
 │   │   env: PI_CODE_TOKEN (per-launch random),         │
 │   │        PI_CODE_DESKTOP=1 (exit with parent)       │
-│   ├─ wait for 127.0.0.1:<free-port>                  │
-│   └─ WebviewWindow → http://127.0.0.1:<port>/#token  │
+│   ├─ show the bundled startup page immediately       │
+│   └─ WebviewWindow → http://127.0.0.1:8766/          │
+│      ?desktop=1#token=<per-launch token>             │
 │      (macOS WKWebView / Windows WebView2)            │
 └──────────────────────────────────────────────────────┘
 ```
@@ -94,20 +95,34 @@ npm start -- --web-dist ../webapp/dist
 ```bash
 cd desktop
 npm install
-npm run build      # bun-compile server + stage webapp + tauri build
+npm run build      # bun-compile server + stage WebUI + tauri build
 # → src-tauri/target/release/bundle/macos/pi-code.app (+ .dmg)
 npm run dev        # debug run via cargo
 ```
+
+桌面图标源文件是 [`desktop/app-icon.png`](desktop/app-icon.png)。替换 logo 后，在
+`desktop/` 目录执行 `npm exec -- tauri icon app-icon.png --output src-tauri/icons`，
+即可重新生成 macOS、Windows、Linux 及移动端图标资源；网页 favicon 也使用同一套 logo。
 
 Notes:
 
 - The sidecar is the same server compiled with `bun build --compile` (the
   packaging route pi itself uses), so no Node installation is required.
-- Desktop state lives in `~/.pi-code-desktop` (separate from the CLI server's
-  `~/.pi-code`); pi auth/sessions are still shared via `~/.pi/agent`.
+- Desktop server state lives in `~/.pi-code-desktop` (separate from the CLI
+  server's `~/.pi-code`); WebView preferences use the operating system's app
+  storage, while pi auth/sessions remain shared via `~/.pi/agent`.
+- 桌面端固定使用 `127.0.0.1:8766` 并限制为单实例运行，让 WebView 的首次使用状态、
+  外观设置和资源缓存能够跨启动复用。启动期间先显示轻量内置启动页，服务就绪后在同一
+  可见窗口进入 WebUI；连接阶段沿用同一套 Pi Code 品牌视觉，避免中间白屏或上游品牌闪现。
+- macOS 原生窗口按钮保留在左上角；侧栏顶部和会话顶栏的空白区域支持拖动窗口，双击则在
+  最大化与原尺寸之间切换，不会进入覆盖菜单栏和 Dock 的全屏模式。
+- 带内容哈希的 `/assets/` 使用长期不可变缓存；入口 HTML、启动脚本和适配器继续在每次
+  启动时校验，避免升级后继续读取旧页面。
 - The sidecar polls its parent PID and exits if the shell is force-quit, so no
   orphaned servers are left behind.
-- Requires Rust (cargo) and Bun to build; ~94MB .app / 32MB .dmg.
+- 桌面端的回合完成、待回答和待审批提醒通过 Tauri 原生系统通知发送；首次开启时由系统
+  授权。浏览器访问仍使用浏览器自身的通知权限。
+- Requires Rust (cargo) and Bun to build; the current arm64 output is about 106MB for the `.app` and 41MB for the `.dmg`.
 - Known caveat: rendering relies on the system webview — on macOS that is
   WebKit. The UI is modern-Vue + monaco/xterm/shiki/mermaid; it runs in
   WebKit, but exotic corners (terminal canvas, kitty graphics) are untested
@@ -126,6 +141,8 @@ Notes:
   `beforeToolCall` gate (keeping extension hooks intact) and surfaces pending
   approvals as `event.approval.requested`; approve/reject from the WebUI
 - Model switching + thinking level, usage/context stats
+- Pi Provider configuration: built-in API Key login, custom `models.json`
+  providers, native OAuth login, default model and model refresh
 - Workspaces (derived from session cwds), file tree browsing (`fs:browse`,
   `fs:home`, session `fs:list` / `fs:read`)
 
@@ -147,6 +164,13 @@ server/   the bridge (this project's own code)
   src/ws.ts          WS control protocol (seq+epoch cursors, replay, resync)
 server/vendor/protocol/  kimi-code's protocol package (reference schemas)
 ```
+
+## Development documents
+
+- [模型配置使用与排障](docs/model-configuration.md)：页面配置、自定义模型和常见问题。
+- [Pi agent 模型配置架构与验收](docs/model-configuration-plan.md)：Provider、认证、默认模型、
+  数据完整性、WebUI 适配和验收清单。
+- [桌面端架构与维护](docs/desktop.md)：启动链路、macOS 顶栏坐标、拖动、通知、打包和验收。
 
 ## Attribution & license
 
