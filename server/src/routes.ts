@@ -304,8 +304,13 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     if (query['busy'] === 'false') items = items.filter((s) => !s.busy);
     if (query['exclude_empty'] === 'true') items = items.filter((s) => s.messageCount > 0);
     if (query['workspace_id']) {
-      const roots = [...ctx.workspaceRoots].filter((r) => workspaceIdFor(r) === query['workspace_id']);
-      if (roots.length > 0) items = items.filter((s) => roots.includes(s.cwd));
+      items = items.filter((s) => workspaceIdFor(s.cwd) === query['workspace_id']);
+    }
+    if (query['before_id']) {
+      const cursorIndex = items.findIndex((s) => s.id === query['before_id']);
+      // Session lists are newest-first, so the next page starts immediately
+      // after the cursor. An unknown cursor must not replay the first page.
+      items = cursorIndex === -1 ? [] : items.slice(cursorIndex + 1);
     }
     const pageSize = Number(query['page_size'] ?? 50);
     const page = items.slice(0, Number.isFinite(pageSize) ? pageSize : 50);
