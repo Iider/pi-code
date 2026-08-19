@@ -475,7 +475,7 @@ describe('useWorkspaceState — renameWorkspace', () => {
     installStorage(createMemoryStorage());
   });
 
-  it('renames via the daemon and applies the name locally', async () => {
+  it('persists the local name after the daemon accepts the rename', async () => {
     apiMock.updateWorkspace.mockResolvedValue({});
     const state = createState();
     state.workspaces = [workspace('wd_1', '/abs/path', 'Old')];
@@ -486,7 +486,7 @@ describe('useWorkspaceState — renameWorkspace', () => {
 
     expect(apiMock.updateWorkspace).toHaveBeenCalledWith('wd_1', { name: 'New' });
     expect(state.workspaces[0]?.name).toBe('New');
-    expect(loadWorkspaceNameOverrides()).toEqual({});
+    expect(loadWorkspaceNameOverrides()).toEqual({ '/abs/path': 'New' });
     expect(deps.pushOperationFailure).not.toHaveBeenCalled();
   });
 

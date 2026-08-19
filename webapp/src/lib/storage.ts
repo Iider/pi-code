@@ -166,12 +166,8 @@ export function saveWorkspaceOrder(ids: Iterable<string>): void {
 }
 
 /**
- * Local display-name overrides for workspaces the daemon cannot rename — today
- * that is derived workspaces (a cwd with sessions that was never explicitly
- * registered), which `PATCH /workspaces/:id` rejects with 404. Keyed by
- * workspace root (stable across the derived → registered transition) and
- * applied on top of the daemon list so the rename survives a refresh. Cleared
- * once the daemon accepts a rename for that root.
+ * Local workspace display names keyed by root. The map mirrors the daemon's
+ * persisted names and also covers derived workspaces or older daemons.
  */
 export function loadWorkspaceNameOverrides(): Record<string, string> {
   const parsed = safeGetJson<unknown>(STORAGE_KEYS.workspaceNameOverrides);

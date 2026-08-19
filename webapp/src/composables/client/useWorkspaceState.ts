@@ -2280,37 +2280,33 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
-  /** Rename a workspace — persists via the daemon update API, then applies
-   *  locally. Derived workspaces (a cwd with sessions that was never explicitly
-   *  registered) can't be renamed by the daemon yet: PATCH rejects them with
-   *  404. In that case the name is persisted in localStorage (keyed by root)
-   *  and overlaid onto the loaded list, so the rename still survives a refresh. */
+  /** Rename a workspace and keep a root-keyed local override so older daemons
+   *  and derived workspaces retain the display name after refreshes. */
   async function renameWorkspace(id: string, name: string): Promise<void> {
-    const root = rawState.workspaces.find((w) => w.id === id)?.root;
+    const root =
+      rawState.workspaces.find((w) => w.id === id)?.root ??
+      mergedWorkspaces.value.find((w) => w.id === id)?.root;
     const applyLocal = (): void => {
       rawState.workspaces = rawState.workspaces.map((w) =>
         w.id === id ? { ...w, name } : w,
       );
     };
-    try {
-      await getKimiWebApi().updateWorkspace(id, { name });
-      // Server accepted the rename — drop any local override for this root.
+    const persistLocal = (): void => {
       if (root !== undefined) {
-        const overrides = loadWorkspaceNameOverrides();
-        if (root in overrides) {
-          delete overrides[root];
-          saveWorkspaceNameOverrides(overrides);
-        }
+        saveWorkspaceNameOverrides({ ...loadWorkspaceNameOverrides(), [root]: name });
       }
       applyLocal();
+    };
+    try {
+      await getKimiWebApi().updateWorkspace(id, { name });
+      persistLocal();
     } catch (err) {
       if (
         root !== undefined &&
         isDaemonApiError(err) &&
         err.code === WORKSPACE_NOT_FOUND_CODE
       ) {
-        saveWorkspaceNameOverrides({ ...loadWorkspaceNameOverrides(), [root]: name });
-        applyLocal();
+        persistLocal();
         return;
       }
       pushOperationFailure('renameWorkspace', err);

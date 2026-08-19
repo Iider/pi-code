@@ -2,8 +2,7 @@
 // exposes them to the REST/WS layers in kimi-web's wire vocabulary.
 
 import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
-import { join, basename, dirname, relative, isAbsolute, resolve } from 'node:path';
-import { homedir } from 'node:os';
+import { join, basename, dirname, isAbsolute, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
   AgentSession,
@@ -124,6 +123,8 @@ export class PiBridge {
   private modelRuntime!: ModelRuntime;
   private meta: Record<string, SessionMeta> = {};
   private readonly metaFile: string;
+  private workspaceNames: Record<string, string> = {};
+  private readonly workspaceNamesFile: string;
   private readonly options: BridgeOptions;
 
   constructor(options: BridgeOptions) {
@@ -132,10 +133,18 @@ export class PiBridge {
     // binaries can't resolve — fall back to our own version.
     this.version = VERSION && VERSION !== '0.0.0' ? `pi-code (pi ${VERSION})` : 'pi-code 0.1.0';
     this.metaFile = join(serverHomeDir(), 'meta.json');
+    this.workspaceNamesFile = join(serverHomeDir(), 'workspace-names.json');
     try {
       if (existsSync(this.metaFile)) this.meta = JSON.parse(readFileSync(this.metaFile, 'utf8'));
     } catch {
       this.meta = {};
+    }
+    try {
+      if (existsSync(this.workspaceNamesFile)) {
+        this.workspaceNames = JSON.parse(readFileSync(this.workspaceNamesFile, 'utf8'));
+      }
+    } catch {
+      this.workspaceNames = {};
     }
   }
 
@@ -146,6 +155,16 @@ export class PiBridge {
   /** Shared canonical runtime used by sessions and model configuration. */
   getModelRuntime(): ModelRuntime {
     return this.modelRuntime;
+  }
+
+  getWorkspaceName(root: string): string {
+    return this.workspaceNames[root] ?? workspaceName(root);
+  }
+
+  setWorkspaceName(root: string, name: string): void {
+    this.workspaceNames[root] = name;
+    mkdirSync(dirname(this.workspaceNamesFile), { recursive: true });
+    writeFileSync(this.workspaceNamesFile, JSON.stringify(this.workspaceNames, null, 2));
   }
 
   // -------------------------------------------------------------------------
@@ -854,8 +873,5 @@ export function workspaceIdFor(root: string): string {
 }
 
 export function workspaceName(root: string): string {
-  const home = homedir();
-  const rel = relative(home, root);
-  if (rel && !rel.startsWith('..') && !isAbsolute(rel)) return `~/${rel}`;
   return basename(root) || root;
 }

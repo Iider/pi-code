@@ -14,12 +14,16 @@ describe('session collection routes', () => {
     session('session-1', workspaceRoot),
   ];
   let app: ReturnType<typeof buildApp>;
+  let workspaceNames: Map<string, string>;
 
   beforeEach(() => {
+    workspaceNames = new Map();
     const bridge = {
       epoch: 'test-epoch',
       listSessions: vi.fn().mockResolvedValue(sessions),
       getEntry: vi.fn(),
+      getWorkspaceName: vi.fn((root: string) => workspaceNames.get(root) ?? root.split('\\').at(-1)!),
+      setWorkspaceName: vi.fn((root: string, name: string) => workspaceNames.set(root, name)),
     };
     app = buildApp({
       bridge: bridge as never,
@@ -34,10 +38,32 @@ describe('session collection routes', () => {
 
   afterEach(async () => app.close());
 
-  const request = (url: string) => app.inject({
-    method: 'GET',
+  const request = async (url: string, options?: { method?: 'GET' | 'PATCH'; payload?: unknown }) => app.inject({
+    method: options?.method ?? 'GET',
     url,
     headers: { authorization: `Bearer ${token}` },
+    payload: options?.payload,
+  } as never);
+
+  it('uses the directory name by default and returns a saved rename', async () => {
+    const workspaceId = workspaceIdFor(workspaceRoot);
+    const before = await request('/api/v1/workspaces');
+    expect(before.json().data.items).toContainEqual(expect.objectContaining({
+      id: workspaceId,
+      name: 'alpha',
+    }));
+
+    const renamed = await request(`/api/v1/workspaces/${workspaceId}`, {
+      method: 'PATCH',
+      payload: { name: 'My project' },
+    });
+    expect(renamed.json().data).toMatchObject({ id: workspaceId, name: 'My project' });
+
+    const after = await request('/api/v1/workspaces');
+    expect(after.json().data.items).toContainEqual(expect.objectContaining({
+      id: workspaceId,
+      name: 'My project',
+    }));
   });
 
   it('returns the page after before_id within the selected workspace', async () => {

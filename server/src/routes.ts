@@ -9,7 +9,6 @@ import { createHash } from 'node:crypto';
 import {
   PiBridge,
   workspaceIdFor,
-  workspaceName,
   SessionBusyError,
   SessionForkPointError,
   SessionNotFoundError,
@@ -92,7 +91,7 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   const wireWorkspace = (root: string) => ({
     id: workspaceIdFor(root),
     root,
-    name: workspaceName(root),
+    name: bridge.getWorkspaceName(root),
     session_count: 0,
   });
 
@@ -259,8 +258,24 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   });
 
   app.patch('/api/v1/workspaces/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as { name?: string };
-    await sendOk(reply, { ...(body.name ? { name: body.name } : {}) }, newRequestId());
+    const sessions = await bridge.listSessions();
+    const roots = new Set([...ctx.workspaceRoots, ...sessions.map((session) => session.cwd)]);
+    const root = [...roots].find((candidate) => workspaceIdFor(candidate) === id);
+    if (!root) {
+      reply.statusCode = 404;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'Workspace not found', newRequestId()));
+      return;
+    }
+    const name = body.name?.trim();
+    if (!name) {
+      reply.statusCode = 400;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'Workspace name is required', newRequestId()));
+      return;
+    }
+    bridge.setWorkspaceName(root, name);
+    await sendOk(reply, { ...wireWorkspace(root), name }, newRequestId());
   });
 
   app.delete('/api/v1/workspaces/:id', async (req, reply) => {
