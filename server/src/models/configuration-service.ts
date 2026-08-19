@@ -4,6 +4,7 @@ import type { AuthEvent, AuthPrompt, AuthType } from '@earendil-works/pi-ai';
 import { ErrorCodes } from '../envelope.ts';
 import { ConfigurationError, redactConfig, redactText } from './errors.ts';
 import { ModelsConfigStore, type ModelsConfigDocument } from './models-config-store.ts';
+import { PiCodeSettingsStore, type DefaultPermissionMode } from './pi-code-settings-store.ts';
 import {
   catalogProviderView,
   configModelViews,
@@ -59,6 +60,7 @@ const MAX_PROVIDER_ID_LENGTH = 128;
 
 export class ModelConfigurationService {
   readonly store: ModelsConfigStore;
+  readonly piCodeSettings: PiCodeSettingsStore;
   private readonly settings: SettingsManager;
   private readonly mutations = new Map<string, Promise<unknown>>();
   private readonly flows = new Map<string, OAuthFlow>();
@@ -66,6 +68,7 @@ export class ModelConfigurationService {
 
   constructor(readonly runtime: ModelRuntime, agentDir = getAgentDir()) {
     this.store = new ModelsConfigStore(agentDir);
+    this.piCodeSettings = new PiCodeSettingsStore(agentDir);
     this.settings = SettingsManager.create(process.cwd(), agentDir);
   }
 
@@ -133,6 +136,7 @@ export class ModelConfigurationService {
       models: configModelViews(availableModels),
       default_model_available: provider && model ? Boolean(this.runtime.getModel(provider, model)) : false,
       thinking: this.settings.getDefaultThinkingLevel(),
+      default_permission_mode: await this.piCodeSettings.defaultPermissionMode(),
       raw: redactConfig(this.settings.getGlobalSettings()),
       version: this.version,
     };
@@ -145,6 +149,10 @@ export class ModelConfigurationService {
     if (typeof input.thinking === 'string') {
       this.settings.setDefaultThinkingLevel(input.thinking as never);
       await this.settings.flush();
+      this.version += 1;
+    }
+    if (input.default_permission_mode !== undefined) {
+      await this.piCodeSettings.updateDefaultPermissionMode(requireDefaultPermissionMode(input.default_permission_mode));
       this.version += 1;
     }
     return this.config();
@@ -656,6 +664,11 @@ function requireProviderModels(value: unknown, providerId: string) {
       ...(maxTokens === undefined ? {} : { maxTokens }),
     };
   });
+}
+
+function requireDefaultPermissionMode(value: unknown): DefaultPermissionMode {
+  if (value === 'manual' || value === 'auto' || value === 'yolo') return value;
+  throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'default_permission_mode must be manual, auto, or yolo');
 }
 
 function configuredModelIds(value: unknown, providerId: string): Set<string> | undefined {

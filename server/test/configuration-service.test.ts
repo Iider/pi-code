@@ -16,6 +16,23 @@ const validConfig = (id: string) => ({
 });
 
 describe('ModelConfigurationService models.json reload', () => {
+  it('persists the default permission mode for the settings dialog', async () => {
+    const directory = await mkdtemp(join(tmpdir(), 'pi-code-default-permission-'));
+    const runtime = {
+      getAvailable: vi.fn().mockResolvedValue([]),
+      getProviders: vi.fn().mockReturnValue([]),
+      listCredentials: vi.fn().mockReturnValue([]),
+    };
+    const service = new ModelConfigurationService(runtime as never, directory);
+
+    await expect(service.config()).resolves.toMatchObject({ default_permission_mode: 'manual' });
+    await expect(service.updateConfig({ default_permission_mode: 'yolo' }))
+      .resolves.toMatchObject({ default_permission_mode: 'yolo' });
+
+    const reloaded = new ModelConfigurationService(runtime as never, directory);
+    await expect(reloaded.config()).resolves.toMatchObject({ default_permission_mode: 'yolo' });
+  });
+
   it('persists full-form edits as a local override for a built-in provider', async () => {
     const runtime = {
       getProvider: vi.fn().mockReturnValue({ id: 'built-in', auth: { apiKey: {} } }),
