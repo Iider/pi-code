@@ -102,6 +102,12 @@ export class SessionNotArchivedError extends Error {
   }
 }
 
+export class SessionNothingToUndoError extends Error {
+  constructor(sessionId: string) {
+    super(`Session has no user turn left to undo: ${sessionId}`);
+  }
+}
+
 const DEFAULT_SESSION_TITLES = new Set(['session', 'new session', '新会话']);
 
 function isDefaultSessionTitle(title: string | undefined): boolean {
@@ -810,6 +816,34 @@ export class PiBridge {
     this.sessions.delete(sessionId);
     delete this.meta[sessionId];
     this.persistMeta();
+  }
+
+  /**
+   * Undo the last `count` user turns by navigating the session tree back to
+   * the Nth-from-last user message; navigateTree parks the leaf at that
+   * message's parent, so the turn leaves the active branch. The abandoned
+   * tail stays in the append-only session file as an orphaned branch and
+   * disappears from history as soon as a new message continues the session.
+   */
+  async undoSession(sessionId: string, count = 1): Promise<void> {
+    const entry = await this.openSession(sessionId);
+    if (entry.session.isStreaming || entry.runningTools.size > 0) {
+      throw new SessionBusyError(sessionId);
+    }
+
+    const branch = entry.session.sessionManager.getBranch();
+    let targetId: string | undefined;
+    let seen = 0;
+    for (let i = branch.length - 1; i >= 0; i--) {
+      const item = branch[i];
+      if (item?.type === 'message' && item.message.role === 'user' && ++seen === count) {
+        targetId = item.id;
+        break;
+      }
+    }
+    if (!targetId) throw new SessionNothingToUndoError(sessionId);
+
+    await entry.session.navigateTree(targetId);
   }
 
   resolveApproval(sessionId: string, approvalId: string, approved: boolean, feedback?: string): { resolved: boolean } {

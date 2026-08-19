@@ -16,10 +16,12 @@ describe('session collection routes', () => {
   let app: ReturnType<typeof buildApp>;
   let workspaceNames: Map<string, string>;
   let deleteArchivedSession: ReturnType<typeof vi.fn>;
+  let undoSession: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     workspaceNames = new Map();
     deleteArchivedSession = vi.fn().mockResolvedValue(undefined);
+    undoSession = vi.fn().mockResolvedValue(undefined);
     const bridge = {
       epoch: 'test-epoch',
       listSessions: vi.fn().mockResolvedValue(sessions),
@@ -27,6 +29,7 @@ describe('session collection routes', () => {
       getWorkspaceName: vi.fn((root: string) => workspaceNames.get(root) ?? root.split('\\').at(-1)!),
       setWorkspaceName: vi.fn((root: string, name: string) => workspaceNames.set(root, name)),
       deleteArchivedSession,
+      undoSession,
     };
     app = buildApp({
       bridge: bridge as never,
@@ -41,7 +44,7 @@ describe('session collection routes', () => {
 
   afterEach(async () => app.close());
 
-  const request = async (url: string, options?: { method?: 'GET' | 'PATCH' | 'DELETE'; payload?: unknown }) => app.inject({
+  const request = async (url: string, options?: { method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'; payload?: unknown }) => app.inject({
     method: options?.method ?? 'GET',
     url,
     headers: { authorization: `Bearer ${token}` },
@@ -97,6 +100,17 @@ describe('session collection routes', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().data).toEqual({ deleted: true });
     expect(deleteArchivedSession).toHaveBeenCalledWith('session-3');
+  });
+
+  it('undoes the last turns through the bridge', async () => {
+    const response = await request('/api/v1/sessions/session-3:undo', {
+      method: 'POST',
+      payload: { count: 2 },
+    });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({ undone: true });
+    expect(undoSession).toHaveBeenCalledWith('session-3', 2);
   });
 });
 

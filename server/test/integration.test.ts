@@ -56,6 +56,20 @@ class MockAgentSession {
   async compact(): Promise<unknown> {
     return {};
   }
+  async navigateTree(targetId: string): Promise<{ editorText?: string; cancelled: boolean }> {
+    const entry = this.sessionManager.getEntry(targetId);
+    if (!entry || entry.type !== 'message') throw new Error(`Entry ${targetId} not found`);
+    const manager = this.sessionManager as SessionManager;
+    if (entry.message.role === 'user') {
+      if (entry.parentId === null) manager.resetLeaf();
+      else manager.branch(entry.parentId);
+    } else {
+      manager.branch(targetId);
+    }
+    this.messages = manager.buildSessionContext().messages;
+    const content = 'content' in entry.message ? entry.message.content : undefined;
+    return { editorText: typeof content === 'string' ? content : undefined, cancelled: false };
+  }
   getSessionStats() {
     return {
       sessionFile: undefined,
@@ -340,6 +354,66 @@ describe('REST wire contract', () => {
       }) ?? [];
     expect(assistantForkTexts).toContain('replace this question');
     expect(assistantForkTexts).toContain('replace this answer');
+  });
+
+  it('undoes the last user turns and drops them from the snapshot', async () => {
+    const { mkdtempSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const sessionDir = mkdtempSync(join(tmpdir(), 'pi-code-undo-test.'));
+    cleanupFns.push(async () => rmSync(sessionDir, { recursive: true, force: true }));
+
+    const manager = SessionManager.create(process.cwd(), sessionDir);
+    manager.newSession();
+    manager.appendMessage({ role: 'user', content: 'first question', timestamp: Date.now() });
+    manager.appendMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'first answer' }],
+      api: 'mock',
+      provider: 'mock',
+      model: 'mock-1',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    });
+    manager.appendMessage({ role: 'user', content: 'second question', timestamp: Date.now() });
+    manager.appendMessage({
+      role: 'assistant',
+      content: [{ type: 'text', text: 'second answer' }],
+      api: 'mock',
+      provider: 'mock',
+      model: 'mock-1',
+      usage: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, totalTokens: 2, cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 } },
+      stopReason: 'stop',
+      timestamp: Date.now(),
+    });
+    const source = new MockAgentSession(manager.getSessionId());
+    source.sessionManager = manager;
+    source.messages = manager.buildSessionContext().messages;
+    bridge.adoptSession(source as never, manager.getSessionFile(), process.cwd());
+
+    const snapshotTexts = async () => {
+      const res = await api(`/sessions/${source.sessionId}/snapshot`);
+      const body = (await res.json()) as { data: { messages: { items: { content: { type: string; text?: string }[] }[] } } };
+      return body.data.messages.items
+        .flatMap((message) => message.content)
+        .map((part) => part.text ?? '');
+    };
+
+    const undoOne = await api(`/sessions/${source.sessionId}:undo`, { method: 'POST', body: '{}' });
+    expect(undoOne.status).toBe(200);
+    let texts = await snapshotTexts();
+    expect(texts).toContain('first question');
+    expect(texts).not.toContain('second question');
+    expect(texts).not.toContain('second answer');
+
+    const undoAgain = await api(`/sessions/${source.sessionId}:undo`, { method: 'POST', body: '{}' });
+    expect(undoAgain.status).toBe(200);
+    texts = await snapshotTexts();
+    expect(texts).not.toContain('first question');
+
+    const undoEmpty = await api(`/sessions/${source.sessionId}:undo`, { method: 'POST', body: '{}' });
+    expect(undoEmpty.status).toBe(400);
   });
 
   it('fs endpoints serve real directory listings', async () => {

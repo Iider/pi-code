@@ -11,6 +11,7 @@ import {
   workspaceIdFor,
   SessionBusyError,
   SessionForkPointError,
+  SessionNothingToUndoError,
   SessionNotArchivedError,
   SessionNotFoundError,
   SessionNotPersistedError,
@@ -453,6 +454,13 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
           await sendOk(reply, bridge.toWireSession(entry), requestId);
           return;
         }
+        case 'undo': {
+          const rawCount = body['count'];
+          const count = typeof rawCount === 'number' && Number.isInteger(rawCount) && rawCount > 0 ? rawCount : 1;
+          await bridge.undoSession(id, count);
+          await sendOk(reply, { undone: true }, requestId);
+          return;
+        }
         default: {
           reply.statusCode = 404;
           await reply.send(fail(ErrorCodes.NOT_IMPLEMENTED, `Unsupported session action: ${action ?? '(none)'}`, requestId));
@@ -462,7 +470,12 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
       if (error instanceof SessionBusyError) {
         reply.statusCode = 409;
-        await reply.send(fail(ErrorCodes.SESSION_BUSY, 'Session is busy and cannot be forked', requestId));
+        await reply.send(fail(ErrorCodes.SESSION_BUSY, `Session is busy and cannot perform action: ${action ?? '(none)'}`, requestId));
+        return;
+      }
+      if (error instanceof SessionNothingToUndoError) {
+        reply.statusCode = 400;
+        await reply.send(fail(ErrorCodes.VALIDATION, error.message, requestId));
         return;
       }
       if (error instanceof SessionNotPersistedError) {
