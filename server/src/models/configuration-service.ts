@@ -70,7 +70,7 @@ export class ModelConfigurationService {
   }
 
   async providers() {
-    return (await providerViews(this.runtime)).filter((provider) => provider.has_api_key);
+    return (await this.visibleProviderViews()).filter((provider) => provider.has_api_key);
   }
 
   async provider(providerId: string) {
@@ -86,7 +86,7 @@ export class ModelConfigurationService {
   }
 
   async models() {
-    const available = await this.runtime.getAvailable();
+    const available = await this.visibleAvailableModels();
     return available.map((m) => ({
       provider: String(m.provider),
       model: `${m.provider}/${m.id}`,
@@ -100,7 +100,7 @@ export class ModelConfigurationService {
 
   async authStatus() {
     await this.settings.reload();
-    const available = await this.runtime.getAvailable();
+    const available = await this.visibleAvailableModels();
     const configuredProvider = this.settings.getDefaultProvider();
     const configuredModel = this.settings.getDefaultModel();
     const configured = configuredProvider && configuredModel
@@ -120,7 +120,7 @@ export class ModelConfigurationService {
     const model = this.settings.getDefaultModel();
     const id = provider && model ? `${provider}/${model}` : undefined;
     const providers = await this.providers();
-    const availableModels = await this.runtime.getAvailable();
+    const availableModels = await this.visibleAvailableModels();
     return {
       providers: Object.fromEntries(providers.map((item) => [item.id, {
         type: item.type,
@@ -154,7 +154,7 @@ export class ModelConfigurationService {
     if (typeof input.default_model !== 'string') {
       throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'default_model is required');
     }
-    const available = await this.runtime.getAvailable();
+    const available = await this.visibleAvailableModels();
     const selected = resolveDefaultModel(available, input.default_model, input.default_provider);
     if (!selected) {
       throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'Default model must be an existing provider/model');
@@ -182,6 +182,13 @@ export class ModelConfigurationService {
     const provider = this.requireProvider(providerId);
     if (typeof input.new_id === 'string' && input.new_id !== providerId) {
       throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'Built-in pi agent providers cannot be renamed');
+    }
+    // The official provider editor always submits the complete model list.
+    // Persisting it under the same id intentionally turns a built-in provider
+    // into a local override; otherwise model/base URL edits are silently
+    // discarded while the UI is told that saving succeeded.
+    if (Array.isArray(input.models)) {
+      return this.saveCustomProvider(providerId, input, providerId, stored);
     }
     if (typeof input.api_key === 'string' && input.api_key.trim()) {
       await this.loginApiKey(providerId, input.api_key);
@@ -362,7 +369,7 @@ export class ModelConfigurationService {
       : undefined;
     const document = structuredClone(stored.document);
     if (previousId && previousId !== providerId) delete document.providers[previousId];
-    document.providers[providerId] = customProviderDocument(input, existing);
+    document.providers[providerId] = customProviderDocument(providerId, input, existing);
     await this.saveModelsConfig(document, stored.revision);
     return previousId
       ? { provider: await this.requireProviderView(providerId) }
@@ -497,9 +504,30 @@ export class ModelConfigurationService {
   }
 
   private async requireProviderView(id: string): Promise<ProviderView> {
-    const view = (await providerViews(this.runtime)).find((provider) => provider.id === id);
+    const view = (await this.visibleProviderViews()).find((provider) => provider.id === id);
     if (!view) throw new ConfigurationError(404, ErrorCodes.VALIDATION, 'Unknown provider');
     return view;
+  }
+
+  private async visibleProviderViews(): Promise<ProviderView[]> {
+    const views = await providerViews(this.runtime);
+    const configured = (await this.store.readUnsafe()).document.providers;
+    return views.map((view) => {
+      const ids = configuredModelIds(configured[view.id], view.id);
+      if (!ids) return view;
+      const models = view.models.filter((id) => ids.has(id));
+      return { ...view, models, model_count: models.length };
+    });
+  }
+
+  private async visibleAvailableModels() {
+    const available = await this.runtime.getAvailable();
+    const configured = (await this.store.readUnsafe()).document.providers;
+    return available.filter((model) => {
+      const providerId = String(model.provider);
+      const ids = configuredModelIds(configured[providerId], providerId);
+      return !ids || ids.has(model.id);
+    });
   }
 
   private serial<T>(key: string, operation: () => Promise<T>): Promise<T> {
@@ -582,8 +610,8 @@ function requireProviderId(value: unknown): string {
   return value.trim();
 }
 
-function customProviderDocument(input: ProviderInput, existing?: Record<string, unknown>) {
-  const models = requireProviderModels(input.models);
+function customProviderDocument(providerId: string, input: ProviderInput, existing?: Record<string, unknown>) {
+  const models = requireProviderModels(input.models, providerId);
   const api = piApiForWireType(input.type);
   const baseUrl = stringOrUndefined(input.base_url) ?? stringOrUndefined(existing?.baseUrl);
   const apiKey = secretOrUndefined(input.api_key) ?? existing?.apiKey;
@@ -598,7 +626,7 @@ function customProviderDocument(input: ProviderInput, existing?: Record<string, 
   };
 }
 
-function requireProviderModels(value: unknown) {
+function requireProviderModels(value: unknown, providerId: string) {
   if (!Array.isArray(value) || value.length === 0) {
     throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'At least one model is required');
   }
@@ -617,8 +645,10 @@ function requireProviderModels(value: unknown) {
     const capabilities = Array.isArray(model.capabilities)
       ? model.capabilities.filter((capability): capability is string => typeof capability === 'string')
       : [];
+    const rawId = model.model.trim();
+    const prefix = `${providerId}/`;
     return {
-      id: model.model.trim(),
+      id: rawId.startsWith(prefix) ? rawId.slice(prefix.length) : rawId,
       ...(stringOrUndefined(model.display_name) ? { name: stringOrUndefined(model.display_name) } : {}),
       reasoning: capabilities.includes('thinking'),
       input: capabilities.includes('image_input') ? ['text', 'image'] : ['text'],
@@ -626,6 +656,19 @@ function requireProviderModels(value: unknown) {
       ...(maxTokens === undefined ? {} : { maxTokens }),
     };
   });
+}
+
+function configuredModelIds(value: unknown, providerId: string): Set<string> | undefined {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  const models = (value as { models?: unknown }).models;
+  if (!Array.isArray(models)) return undefined;
+  const prefix = `${providerId}/`;
+  return new Set(models.flatMap((entry) => {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return [];
+    const id = (entry as { id?: unknown }).id;
+    if (typeof id !== 'string') return [];
+    return [id.startsWith(prefix) ? id.slice(prefix.length) : id];
+  }));
 }
 
 function positiveInteger(value: unknown, label: string): number {

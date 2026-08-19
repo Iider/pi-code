@@ -66,14 +66,27 @@ export class ModelsConfigStore {
       await validateWithPiRuntime(temporary, directory, nonce);
       await rename(temporary, this.path);
       await chmod(this.path, 0o600);
-      const dirHandle = await open(directory, 'r');
-      try { await dirHandle.sync(); } finally { await dirHandle.close(); }
+      await syncDirectory(directory);
     } catch (error) {
       await handle.close().catch(() => undefined);
       await unlink(temporary).catch(() => undefined);
       throw error;
     }
     return { revision: revision(raw) };
+  }
+}
+
+async function syncDirectory(directory: string): Promise<void> {
+  const handle = await open(directory, 'r');
+  try {
+    await handle.sync();
+  } catch (error) {
+    // Windows does not support flushing a directory handle. The temporary
+    // file itself was already flushed before the atomic rename, so only this
+    // unsupported durability enhancement is skipped.
+    if (process.platform !== 'win32' || (error as NodeJS.ErrnoException).code !== 'EPERM') throw error;
+  } finally {
+    await handle.close();
   }
 }
 

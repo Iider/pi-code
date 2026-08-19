@@ -16,6 +16,40 @@ const validConfig = (id: string) => ({
 });
 
 describe('ModelConfigurationService models.json reload', () => {
+  it('persists full-form edits as a local override for a built-in provider', async () => {
+    const runtime = {
+      getProvider: vi.fn().mockReturnValue({ id: 'built-in', auth: { apiKey: {} } }),
+    };
+    const service = new ModelConfigurationService(runtime as never, '/tmp/pi-code-provider-override-test');
+    vi.spyOn(service.store, 'readUnsafe').mockResolvedValue({
+      document: { providers: {} },
+      revision: 'revision-1',
+    });
+    const saveCustomProvider = vi.spyOn(
+      service as unknown as { saveCustomProvider: (...args: unknown[]) => Promise<unknown> },
+      'saveCustomProvider',
+    )
+      .mockResolvedValue({ provider: { id: 'built-in' } } as never);
+    const input = {
+      type: 'openai',
+      base_url: 'https://example.test/v1',
+      models: [
+        { model: 'model-one', max_context_size: 32_768 },
+        { model: 'model-two', max_context_size: 65_536 },
+      ],
+    };
+
+    await expect(service.updateProvider('built-in', input)).resolves.toEqual({
+      provider: { id: 'built-in' },
+    });
+    expect(saveCustomProvider).toHaveBeenCalledWith(
+      'built-in',
+      input,
+      'built-in',
+      { document: { providers: {} }, revision: 'revision-1' },
+    );
+  });
+
   it('restores the previous file when the shared runtime cannot reload', async () => {
     const directory = await mkdtemp(join(tmpdir(), 'pi-code-model-service-'));
     const runtime = {

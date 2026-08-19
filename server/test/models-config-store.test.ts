@@ -12,8 +12,10 @@ describe('ModelsConfigStore', () => {
     const result = await store.write(document);
     expect(result.revision).toHaveLength(64);
     expect(JSON.parse(await readFile(store.path, 'utf8'))).toEqual(document);
-    expect((await stat(store.path)).mode & 0o777).toBe(0o600);
-    expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    if (process.platform !== 'win32') {
+      expect((await stat(store.path)).mode & 0o777).toBe(0o600);
+      expect((await stat(directory)).mode & 0o777).toBe(0o700);
+    }
   });
 
   it('rejects stale revisions without changing the file', async () => {
