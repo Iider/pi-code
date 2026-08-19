@@ -89,7 +89,7 @@ export function buildWsUrl(origin: string, clientId: string): string {
 
 function getClientId(): string {
   const stored = safeGetString(CLIENT_ID_KEY);
-  if (stored) return stored;
+  if (stored && /^[\x20-\x7e]+$/.test(stored)) return stored;
   const generated = `web_${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
   safeSetString(CLIENT_ID_KEY, generated);
   return generated;

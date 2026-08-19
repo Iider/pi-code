@@ -184,6 +184,12 @@ export function initServerAuth(): boolean {
 /** Current unexpired credential, or undefined if none is available. */
 export function getCredential(): string | undefined {
   if (memory === undefined) return undefined;
+  // Bearer headers and WebSocket subprotocols only accept byte-safe values.
+  // Discard malformed legacy/browser-storage data before transport APIs see it.
+  if (!/^[\x20-\x7e]+$/.test(memory.credential)) {
+    clearCredential();
+    return undefined;
+  }
   if (memory.expiresAt <= Date.now()) {
     clearExpiredCredential(memory);
     return undefined;

@@ -239,11 +239,11 @@ html.pi-code-desktop .chat-header input {
  * transition continuous with Pi Code's bundled startup page. A visible
  * WKWebView is required on macOS; hidden WebViews can be suspended before
  * Vue finishes initialization. */
-html.pi-code-desktop .gload-logo {
+.gload-logo {
   display: none;
 }
 
-html.pi-code-desktop .gload-box::before {
+.gload-box::before {
   display: grid;
   place-items: center;
   width: 54px;
@@ -259,7 +259,7 @@ html.pi-code-desktop .gload-box::before {
   line-height: 1;
 }
 
-html.pi-code-desktop .gload-text {
+.gload-text {
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -268,7 +268,7 @@ html.pi-code-desktop .gload-text {
   letter-spacing: normal;
 }
 
-html.pi-code-desktop .gload-text::before {
+.gload-text::before {
   color: var(--color-text);
   content: "Pi Code";
   font-size: 19px;
