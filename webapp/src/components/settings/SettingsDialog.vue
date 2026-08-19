@@ -19,6 +19,9 @@ import Button from '../ui/Button.vue';
 import SegmentedControl from '../ui/SegmentedControl.vue';
 import Select from '../ui/Select.vue';
 import Tooltip from '../ui/Tooltip.vue';
+import Icon from '../ui/Icon.vue';
+import IconButton from '../ui/IconButton.vue';
+import { useConfirmDialog } from '../../composables/useConfirmDialog';
 
 const { t } = useI18n();
 
@@ -225,6 +228,7 @@ function setTab(tab: SettingsTab): void {
 // through the composable so the sidebar list updates automatically.
 // ---------------------------------------------------------------------------
 const client = useKimiWebClient();
+const { confirm } = useConfirmDialog();
 
 const archivedItems = ref<AppSession[]>([]);
 const archivedLoading = ref(false);
@@ -310,6 +314,35 @@ async function onRestore(id: string): Promise<void> {
   if (ok) {
     archivedItems.value = archivedItems.value.filter((s) => s.id !== id);
   }
+}
+
+async function deleteArchivedSessions(items: AppSession[]): Promise<void> {
+  for (const item of items) {
+    await client.deleteArchivedSession(item.id);
+    archivedItems.value = archivedItems.value.filter((archived) => archived.id !== item.id);
+  }
+}
+
+async function onDelete(session: AppSession): Promise<void> {
+  await confirm({
+    title: t('settings.archivedDeleteConfirmTitle'),
+    message: t('settings.archivedDeleteConfirmMessage', { name: session.title }),
+    confirmLabel: t('settings.archivedDelete'),
+    variant: 'danger',
+    action: () => deleteArchivedSessions([session]),
+  });
+}
+
+async function onDeleteWorkspace(cwd: string): Promise<void> {
+  const items = archivedItems.value.filter((item) => item.archived && item.cwd === cwd);
+  if (items.length === 0) return;
+  await confirm({
+    title: t('settings.archivedDeleteAllConfirmTitle'),
+    message: t('settings.archivedDeleteAllConfirmMessage', { count: items.length, workspace: cwd }),
+    confirmLabel: t('settings.archivedDeleteAll'),
+    variant: 'danger',
+    action: () => deleteArchivedSessions(items),
+  });
 }
 
 function archiveTime(iso: string): string {
@@ -640,6 +673,10 @@ function archiveTime(iso: string): string {
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h6l2 2h10v9H3z" /><path d="M3 7V5h6l2 2" /></svg>
                   <span class="path">{{ g.cwd }}</span>
                   <span class="count">{{ t('settings.archivedSessionsCount', { count: g.items.length }) }}</span>
+                  <Button variant="danger-soft" size="sm" @click="onDeleteWorkspace(g.cwd)">
+                    <Icon name="trash" size="sm" />
+                    {{ t('settings.archivedDeleteAll') }}
+                  </Button>
                 </div>
                 <div class="setting-card">
                   <div v-for="s in g.items" :key="s.id" class="archive-row">
@@ -647,7 +684,12 @@ function archiveTime(iso: string): string {
                       <div class="archive-name">{{ s.title }}</div>
                       <div class="archive-time">{{ t('settings.archivedAt', { time: archiveTime(s.updatedAt) }) }}</div>
                     </div>
-                    <Button variant="secondary" size="sm" @click="onRestore(s.id)">{{ t('settings.archivedRestore') }}</Button>
+                    <div class="archive-actions">
+                      <IconButton size="md" :label="t('settings.archivedDeleteNamed', { name: s.title })" class="archive-delete" @click="onDelete(s)">
+                        <Icon name="trash" size="md" />
+                      </IconButton>
+                      <Button variant="secondary" size="sm" @click="onRestore(s.id)">{{ t('settings.archivedRestore') }}</Button>
+                    </div>
                   </div>
                 </div>
               </section>
@@ -823,6 +865,8 @@ function archiveTime(iso: string): string {
 .archive-workspace svg { width: 16px; height: 16px; color: var(--color-text-faint); flex: none; }
 .archive-workspace .path { font-family: var(--font-mono); font-size: var(--text-xs); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .archive-workspace .count { margin-left: auto; color: var(--color-text-faint); font-weight: var(--weight-regular); font-size: var(--text-xs); flex: none; }
+.archive-actions { display: flex; align-items: center; gap: var(--space-2); }
+.archive-delete { color: var(--color-danger); }
 .archive-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; padding: var(--space-3) var(--space-4); border-top: 1px solid var(--color-line); }
 .archive-row:first-child { border-top: none; }
 .archive-row:hover { background: var(--color-surface-sunken); }

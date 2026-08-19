@@ -2913,6 +2913,7 @@ export function useKimiWebClient() {
     archiveSession: workspaceState.archiveSession,
     exportSession: workspaceState.exportSession,
     restoreSession: workspaceState.restoreSession,
+    deleteArchivedSession: workspaceState.deleteArchivedSession,
     loadArchivedSessions: workspaceState.loadArchivedSessions,
     compact: workspaceState.compact,
     forkSession: workspaceState.forkSession,

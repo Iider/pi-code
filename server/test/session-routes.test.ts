@@ -15,15 +15,18 @@ describe('session collection routes', () => {
   ];
   let app: ReturnType<typeof buildApp>;
   let workspaceNames: Map<string, string>;
+  let deleteArchivedSession: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     workspaceNames = new Map();
+    deleteArchivedSession = vi.fn().mockResolvedValue(undefined);
     const bridge = {
       epoch: 'test-epoch',
       listSessions: vi.fn().mockResolvedValue(sessions),
       getEntry: vi.fn(),
       getWorkspaceName: vi.fn((root: string) => workspaceNames.get(root) ?? root.split('\\').at(-1)!),
       setWorkspaceName: vi.fn((root: string, name: string) => workspaceNames.set(root, name)),
+      deleteArchivedSession,
     };
     app = buildApp({
       bridge: bridge as never,
@@ -38,7 +41,7 @@ describe('session collection routes', () => {
 
   afterEach(async () => app.close());
 
-  const request = async (url: string, options?: { method?: 'GET' | 'PATCH'; payload?: unknown }) => app.inject({
+  const request = async (url: string, options?: { method?: 'GET' | 'PATCH' | 'DELETE'; payload?: unknown }) => app.inject({
     method: options?.method ?? 'GET',
     url,
     headers: { authorization: `Bearer ${token}` },
@@ -86,6 +89,14 @@ describe('session collection routes', () => {
   it('does not replay the first page when before_id is unknown', async () => {
     const response = await request('/api/v1/sessions?page_size=2&before_id=missing');
     expect(response.json().data).toEqual({ items: [], has_more: false });
+  });
+
+  it('deletes an archived session through the bridge', async () => {
+    const response = await request('/api/v1/sessions/session-3', { method: 'DELETE' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toEqual({ deleted: true });
+    expect(deleteArchivedSession).toHaveBeenCalledWith('session-3');
   });
 });
 

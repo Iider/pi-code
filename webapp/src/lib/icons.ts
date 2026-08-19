@@ -58,6 +58,7 @@ import RiCloseLine from '~icons/ri/close-line';
 import RiCodeLine from '~icons/ri/code-line';
 import RiCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line';
 import RiDownloadLine from '~icons/ri/download-line';
+import RiDeleteBinLine from '~icons/ri/delete-bin-line';
 import RiDraggable from '~icons/ri/draggable';
 import RiEqualizerLine from '~icons/ri/equalizer-line';
 import RiExpandDiagonalLine from '~icons/ri/expand-diagonal-line';
@@ -130,6 +131,7 @@ import RawCloseLine from '~icons/ri/close-line?raw';
 import RawCodeLine from '~icons/ri/code-line?raw';
 import RawCollapseDiagonalLine from '~icons/ri/collapse-diagonal-line?raw';
 import RawDownloadLine from '~icons/ri/download-line?raw';
+import RawDeleteBinLine from '~icons/ri/delete-bin-line?raw';
 import RawDraggable from '~icons/ri/draggable?raw';
 import RawEqualizerLine from '~icons/ri/equalizer-line?raw';
 import RawExpandDiagonalLine from '~icons/ri/expand-diagonal-line?raw';
@@ -184,6 +186,7 @@ export type IconName =
   | 'link'
   | 'external-link'
   | 'download'
+  | 'trash'
   | 'undo'
   | 'send'
   | 'image'
@@ -270,6 +273,7 @@ export const ICONS: Record<IconName, IconEntry> = {
   link: entry(RiLinksLine, RawLinksLine),
   'external-link': entry(RiExternalLinkLine, RawExternalLinkLine),
   download: entry(RiDownloadLine, RawDownloadLine),
+  trash: entry(RiDeleteBinLine, RawDeleteBinLine),
   undo: entry(RiArrowGoBackLine, RawArrowGoBackLine),
   send: entry(RiArrowUpLine, RawArrowUpLine),
   image: entry(RiImageLine, RawImageLine),

@@ -184,6 +184,185 @@
   font-size: var(--text-sm);
 }
 
+.archive-workspace .pi-archive-delete-all {
+  margin-left: var(--space-2);
+}
+
+.archive-list .archive-row {
+  grid-template-columns: minmax(0, 1fr) 26px auto;
+  gap: var(--space-2);
+}
+
+.pi-archive-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-md);
+  background: transparent;
+  color: var(--color-danger);
+  cursor: pointer;
+}
+
+.pi-archive-button:hover {
+  background: var(--color-danger-soft);
+}
+
+.pi-archive-button:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+
+.pi-archive-button svg {
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.pi-archive-button--all {
+  width: auto;
+  height: 30px;
+  gap: var(--space-1);
+  padding: 0 var(--space-3);
+  border-color: var(--color-danger-bd);
+  border-radius: var(--radius-sm);
+  background: var(--color-danger-soft);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.pi-delete-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-modal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: var(--space-6);
+  background: #0d111747;
+}
+
+.pi-delete-dialog {
+  width: min(440px, 100%);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--space-8) * 2);
+  overflow: hidden;
+  border: 0.5px solid var(--color-line);
+  border-radius: var(--radius-xl);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-xl);
+  color: var(--color-text);
+  font-family: var(--font-ui);
+}
+
+.pi-delete-head {
+  padding: 20px 22px 14px;
+}
+
+.pi-delete-head h3 {
+  margin: 0;
+  font-size: var(--text-lg);
+  font-weight: var(--weight-semibold);
+  line-height: var(--leading-tight);
+}
+
+.pi-delete-body {
+  padding: 4px 22px 18px;
+  color: var(--color-text-muted);
+  font-size: var(--text-base);
+  line-height: var(--leading-normal);
+}
+
+.pi-delete-body p {
+  margin: 0;
+}
+
+.pi-delete-foot {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 14px 22px 20px;
+}
+
+.pi-delete-foot button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 36px;
+  padding: 0 var(--space-4);
+  border: 0.5px solid transparent;
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-xs);
+  font-family: var(--font-ui);
+  font-size: var(--text-base);
+  font-weight: var(--weight-medium);
+  line-height: 1;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background var(--duration-base) var(--ease-out), border-color var(--duration-base) var(--ease-out), color var(--duration-base) var(--ease-out), box-shadow var(--duration-base) var(--ease-out), transform var(--duration-fast) var(--ease-out);
+}
+
+.pi-delete-cancel {
+  background: transparent;
+  color: var(--color-text-muted);
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.pi-delete-cancel:hover {
+  background: var(--color-hover);
+  color: var(--color-text-strong);
+}
+
+.pi-delete-confirm {
+  border-color: var(--color-danger-bd);
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
+  box-shadow: none;
+}
+
+.pi-delete-confirm:hover {
+  background: var(--color-danger);
+  color: var(--color-text-on-accent);
+  border-color: var(--color-danger);
+}
+
+.pi-delete-foot button:active {
+  transform: scale(0.98);
+}
+
+.pi-delete-foot button:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring-strong);
+}
+
+.pi-archive-toast {
+  position: fixed;
+  right: var(--space-5);
+  bottom: var(--space-5);
+  z-index: var(--z-toast);
+  max-width: min(420px, calc(100vw - 32px));
+  padding: var(--space-3) var(--space-4);
+  border: 1px solid var(--color-danger-bd);
+  border-radius: var(--radius-lg);
+  background: var(--color-surface-raised);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-danger);
+  font-family: var(--font-ui);
+  font-size: var(--text-sm);
+}
+
 @keyframes pi-code-fork-pulse {
   from { transform: scale(0.86); }
   to { transform: scale(1.04); }

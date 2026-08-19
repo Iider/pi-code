@@ -1,7 +1,7 @@
 // PiBridge — the adapter core. Owns a registry of live pi AgentSessions and
 // exposes them to the REST/WS layers in kimi-web's wire vocabulary.
 
-import { existsSync, readFileSync, writeFileSync, mkdirSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join, basename, dirname, isAbsolute, resolve } from 'node:path';
 import { createHash } from 'node:crypto';
 import {
@@ -93,6 +93,12 @@ export class SessionNotPersistedError extends Error {
 export class SessionForkPointError extends Error {
   constructor(entryId: string) {
     super(`Fork point must be a persisted user or assistant message: ${entryId}`);
+  }
+}
+
+export class SessionNotArchivedError extends Error {
+  constructor(sessionId: string) {
+    super(`Session must be archived before it can be deleted: ${sessionId}`);
   }
 }
 
@@ -794,6 +800,18 @@ export class PiBridge {
     return Promise.resolve();
   }
 
+  async deleteArchivedSession(sessionId: string): Promise<void> {
+    const session = (await this.listSessions()).find((item) => item.id === sessionId);
+    if (!session) throw new SessionNotFoundError(sessionId);
+    if (!session.archived) throw new SessionNotArchivedError(sessionId);
+    if (session.busy) throw new SessionBusyError(sessionId);
+
+    unlinkSync(session.file);
+    this.sessions.delete(sessionId);
+    delete this.meta[sessionId];
+    this.persistMeta();
+  }
+
   resolveApproval(sessionId: string, approvalId: string, approved: boolean, feedback?: string): { resolved: boolean } {
     const entry = this.sessions.get(sessionId);
     const record = entry?.approvals.get(approvalId);
@@ -853,6 +871,10 @@ export class PiBridge {
 
   private setMeta(sessionId: string, patch: SessionMeta): void {
     this.meta[sessionId] = { ...(this.meta[sessionId] ?? {}), ...patch };
+    this.persistMeta();
+  }
+
+  private persistMeta(): void {
     try {
       mkdirSync(serverHomeDir(), { recursive: true });
       writeFileSync(this.metaFile, JSON.stringify(this.meta));

@@ -498,6 +498,10 @@ export class DaemonKimiWebApi implements KimiWebApi {
     return toAppSession(data);
   }
 
+  async deleteSession(sessionId: string): Promise<{ deleted: true }> {
+    return this.http.delete<{ deleted: true }>(`/sessions/${encodeURIComponent(sessionId)}`);
+  }
+
   // -------------------------------------------------------------------------
   // Messages
   // -------------------------------------------------------------------------

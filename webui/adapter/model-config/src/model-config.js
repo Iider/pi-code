@@ -23,6 +23,9 @@ let oauthDialog = null;
 let oauthFlow = null;
 let oauthPollTimer = null;
 let adapterRefreshQueued = false;
+let archivedSessions = null;
+let archivedSessionsLoading = null;
+const deletedArchivedSessionIds = new Set();
 
 if (IS_TAURI_DESKTOP) document.documentElement.classList.add('pi-code-desktop');
 
@@ -101,8 +104,189 @@ function queueAdapterRefresh() {
     hideRedundantConfigureEntry();
     enhanceOAuthEntries();
     enhanceMessageForkActions();
+    enhanceArchivedSessionActions();
     enhanceDesktopWindowChrome();
   });
+}
+
+function enhanceArchivedSessionActions() {
+  const panel = document.querySelector('.archive-list')?.closest('.panel');
+  if (!panel) return;
+  if (!archivedSessions) {
+    void loadArchivedSessions().then(queueAdapterRefresh);
+    return;
+  }
+
+  const sortMode = archivedSortMode(panel);
+  for (const card of panel.querySelectorAll('.archive-card')) {
+    const workspace = card.querySelector('.archive-workspace .path')?.textContent?.trim();
+    const workspaceRow = card.querySelector('.archive-workspace');
+    if (!workspace || !workspaceRow) continue;
+
+    const allWorkspaceSessions = archivedSessions
+      .filter((session) => session.metadata?.cwd === workspace && !deletedArchivedSessionIds.has(session.id));
+    const visibleCandidates = sortArchivedSessions(allWorkspaceSessions, sortMode);
+    const matchedIds = new Set();
+
+    for (const row of card.querySelectorAll('.archive-row')) {
+      const title = row.querySelector('.archive-name')?.textContent?.trim();
+      if (!title) continue;
+      const session = visibleCandidates.find((candidate) => (
+        candidate.title === title && !matchedIds.has(candidate.id)
+      ));
+      if (!session || deletedArchivedSessionIds.has(session.id)) {
+        row.remove();
+        continue;
+      }
+      matchedIds.add(session.id);
+      row.dataset.piArchivedSessionId = session.id;
+      if (!row.querySelector('.pi-archive-delete')) {
+        const button = archiveDeleteButton(localeText(`删除会话“${title}”`, `Delete session “${title}”`));
+        button.classList.add('pi-archive-delete');
+        button.addEventListener('click', () => void deleteArchivedRows([session], workspace));
+        const restore = row.querySelector('button');
+        row.insertBefore(button, restore ?? null);
+      }
+    }
+
+    if (!workspaceRow.querySelector('.pi-archive-delete-all')) {
+      const button = archiveDeleteButton(localeText('全部删除', 'Delete all'), true);
+      button.classList.add('pi-archive-delete-all');
+      button.addEventListener('click', () => {
+        const sessions = archivedSessions.filter((session) => (
+          session.metadata?.cwd === workspace && !deletedArchivedSessionIds.has(session.id)
+        ));
+        void deleteArchivedRows(sessions, workspace);
+      });
+      workspaceRow.appendChild(button);
+    }
+  }
+}
+
+async function loadArchivedSessions() {
+  if (archivedSessionsLoading) return archivedSessionsLoading;
+  archivedSessionsLoading = (async () => {
+    const sessions = [];
+    let beforeId;
+    for (;;) {
+      const query = new URLSearchParams({ archived_only: 'true', page_size: '100' });
+      if (beforeId) query.set('before_id', beforeId);
+      const page = await apiRequest(`/api/v1/sessions?${query}`);
+      sessions.push(...(page.items ?? []));
+      if (!page.has_more || page.items?.length === 0) break;
+      beforeId = page.items.at(-1)?.id;
+      if (!beforeId) break;
+    }
+    archivedSessions = sessions;
+  })().catch((error) => {
+    showArchiveDeleteError(error instanceof Error ? error.message : String(error));
+  }).finally(() => {
+    archivedSessionsLoading = null;
+  });
+  return archivedSessionsLoading;
+}
+
+function archivedSortMode(panel) {
+  const selected = [...panel.querySelectorAll('.archive-toolbar button')]
+    .find((button) => button.getAttribute('aria-pressed') === 'true' || button.classList.contains('on'))
+    ?.textContent?.trim() ?? '';
+  if (/^(创建时间|created time)$/i.test(selected)) return 'created';
+  if (/^(按字母顺序|name)$/i.test(selected)) return 'name';
+  return 'archived';
+}
+
+function sortArchivedSessions(sessions, mode) {
+  const sorted = [...sessions];
+  if (mode === 'created') sorted.sort((a, b) => b.created_at.localeCompare(a.created_at));
+  else if (mode === 'name') sorted.sort((a, b) => a.title.localeCompare(b.title, 'zh'));
+  else sorted.sort((a, b) => b.updated_at.localeCompare(a.updated_at));
+  return sorted;
+}
+
+function archiveDeleteButton(label, withText = false) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = withText ? 'pi-archive-button pi-archive-button--all' : 'pi-archive-button';
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.innerHTML = `${trashIcon()}${withText ? `<span>${escapeHtml(label)}</span>` : ''}`;
+  return button;
+}
+
+async function deleteArchivedRows(sessions, workspace) {
+  if (sessions.length === 0) return;
+  const confirmed = await confirmArchivedDelete(sessions, workspace);
+  if (!confirmed) return;
+  try {
+    for (const session of sessions) {
+      await apiRequest(`/api/v1/sessions/${encodeURIComponent(session.id)}`, { method: 'DELETE' });
+      deletedArchivedSessionIds.add(session.id);
+    }
+    archivedSessions = archivedSessions.filter((session) => !deletedArchivedSessionIds.has(session.id));
+    for (const row of document.querySelectorAll('.archive-row[data-pi-archived-session-id]')) {
+      if (deletedArchivedSessionIds.has(row.dataset.piArchivedSessionId)) row.remove();
+    }
+    for (const card of document.querySelectorAll('.archive-card')) {
+      const rows = card.querySelectorAll('.archive-row');
+      const count = card.querySelector('.archive-workspace .count');
+      if (count) count.textContent = localeText(`${rows.length} 个会话`, `${rows.length} sessions`);
+      if (rows.length === 0) card.remove();
+    }
+  } catch (error) {
+    showArchiveDeleteError(error instanceof Error ? error.message : String(error));
+  }
+}
+
+function confirmArchivedDelete(sessions, workspace) {
+  return new Promise((resolve) => {
+    const single = sessions.length === 1;
+    const overlay = document.createElement('div');
+    overlay.className = 'pi-delete-overlay';
+    const title = single
+      ? localeText('永久删除这个会话？', 'Permanently delete this session?')
+      : localeText('永久删除这个工作区的全部归档会话？', 'Permanently delete all archived sessions in this workspace?');
+    const message = single
+      ? localeText(`“${sessions[0].title}”及其全部消息将被永久删除，无法恢复。`, `“${sessions[0].title}” and all of its messages will be permanently deleted. This cannot be undone.`)
+      : localeText(`将永久删除工作区“${workspace}”中的 ${sessions.length} 个归档会话及其全部消息，无法恢复。`, `${sessions.length} archived sessions in “${workspace}” and all of their messages will be permanently deleted. This cannot be undone.`);
+    overlay.innerHTML = `<section class="pi-delete-dialog" role="dialog" aria-modal="true" aria-labelledby="pi-delete-title">
+      <header class="pi-delete-head"><h3 id="pi-delete-title">${escapeHtml(title)}</h3></header>
+      <div class="pi-delete-body"><p>${escapeHtml(message)}</p></div>
+      <footer class="pi-delete-foot">
+        <button type="button" class="pi-delete-cancel">${escapeHtml(localeText('取消', 'Cancel'))}</button>
+        <button type="button" class="pi-delete-confirm">${escapeHtml(localeText('删除', 'Delete'))}</button>
+      </footer>
+    </section>`;
+    const finish = (result) => {
+      document.removeEventListener('keydown', onKeydown);
+      overlay.remove();
+      resolve(result);
+    };
+    const onKeydown = (event) => {
+      if (event.key === 'Escape') finish(false);
+    };
+    overlay.addEventListener('mousedown', (event) => {
+      if (event.target === overlay) finish(false);
+    });
+    overlay.querySelector('.pi-delete-cancel').addEventListener('click', () => finish(false));
+    overlay.querySelector('.pi-delete-confirm').addEventListener('click', () => finish(true));
+    document.addEventListener('keydown', onKeydown);
+    document.body.appendChild(overlay);
+    overlay.querySelector('.pi-delete-confirm').focus();
+  });
+}
+
+function showArchiveDeleteError(message) {
+  document.querySelector('.pi-archive-toast')?.remove();
+  const toast = document.createElement('div');
+  toast.className = 'pi-archive-toast';
+  toast.setAttribute('role', 'alert');
+  toast.textContent = localeText(`删除失败：${message}`, `Delete failed: ${message}`);
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+function trashIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7l1-3h4l1 3m3 0-1 14H7L6 7"/></svg>';
 }
 
 function enhanceMessageForkActions() {

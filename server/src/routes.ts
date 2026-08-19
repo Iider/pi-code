@@ -11,6 +11,7 @@ import {
   workspaceIdFor,
   SessionBusyError,
   SessionForkPointError,
+  SessionNotArchivedError,
   SessionNotFoundError,
   SessionNotPersistedError,
 } from './bridge.ts';
@@ -389,6 +390,28 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       await sendOk(reply, bridge.toWireSession(entry), requestId);
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      throw error;
+    }
+  });
+
+  app.delete('/api/v1/sessions/:id', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    try {
+      await bridge.deleteArchivedSession(id);
+      await sendOk(reply, { deleted: true }, requestId);
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof SessionNotArchivedError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.VALIDATION, error.message, requestId));
+        return;
+      }
+      if (error instanceof SessionBusyError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.SESSION_BUSY, 'Session is busy and cannot be deleted', requestId));
+        return;
+      }
       throw error;
     }
   });

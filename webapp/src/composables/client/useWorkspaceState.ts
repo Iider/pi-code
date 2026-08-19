@@ -2474,6 +2474,17 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     }
   }
 
+  async function deleteArchivedSession(id: string): Promise<void> {
+    try {
+      await getKimiWebApi().deleteSession(id);
+      forgetSession(id);
+      sideChat.clearSideChatForSession(id);
+    } catch (err) {
+      pushOperationFailure('deleteSession', err, { sessionId: id });
+      throw err;
+    }
+  }
+
   /** List archived sessions (server-side `archived_only` filter). Kept separate
    *  from the per-workspace active list — callers (e.g. Settings) hold the page
    *  locally and do their own search/filter/sort. */
@@ -2814,6 +2825,7 @@ export function useWorkspaceState(rawState: ExtendedState, deps: UseWorkspaceSta
     archiveSession,
     exportSession,
     restoreSession,
+    deleteArchivedSession,
     loadArchivedSessions,
     logout,
     compact,
