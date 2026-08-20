@@ -17,7 +17,7 @@ export interface ApprovalRecord {
 export type ApprovalPolicy = 'all' | 'dangerous' | 'none';
 
 /** Tool calls that mutate state and therefore may need approval. */
-const MUTATIVE_TOOLS = new Set(['bash', 'write', 'edit']);
+const MUTATIVE_TOOLS = new Set(['bash', 'write', 'edit', 'session_draft']);
 
 const DANGEROUS_PATTERNS: { pattern: RegExp; label: string }[] = [
   { pattern: /\brm\s+(-[a-z]*\s+)*-/i, label: 'rm' },
@@ -35,6 +35,7 @@ export function isDangerousCommand(command: string): boolean {
 
 /** Does this tool call need an approval round-trip under the given policy? */
 export function needsApproval(policy: ApprovalPolicy, toolName: string, args: Record<string, unknown>): boolean {
+  if (toolName === 'session_draft') return args['action'] === 'request_publish';
   if (policy === 'none') return false;
   if (!MUTATIVE_TOOLS.has(toolName)) return false;
   if (policy === 'all') return true;
@@ -53,6 +54,7 @@ export function installApprovalGate(agent: Agent, options: {
   turnId: () => number | undefined;
   onApproval: (record: ApprovalRecord) => void;
   onSettled: (approvalId: string, decision: 'approved' | 'rejected' | 'cancelled', feedback?: string) => void;
+  toolInputDisplay?: (toolName: string, args: Record<string, unknown>) => Promise<unknown>;
 }): void {
   const existing = agent.beforeToolCall?.bind(agent);
   agent.beforeToolCall = async (context: BeforeToolCallContext, signal?: AbortSignal): Promise<BeforeToolCallResult | undefined> => {
@@ -64,6 +66,9 @@ export function installApprovalGate(agent: Agent, options: {
     if (!needsApproval(options.policy, toolName, args)) return extResult;
 
     const approvalId = newId('apr_');
+    const toolInputDisplay = options.toolInputDisplay
+      ? await options.toolInputDisplay(toolName, args)
+      : buildToolInputDisplay(toolName, args);
     const record = await new Promise<ApprovalRecord>((resolveOuter) => {
       const record: ApprovalRecord = {
         wire: {
@@ -73,7 +78,7 @@ export function installApprovalGate(agent: Agent, options: {
           tool_call_id: context.toolCall.id,
           tool_name: toolName,
           action: describeAction(toolName, args),
-          tool_input_display: buildToolInputDisplay(toolName, args),
+          tool_input_display: toolInputDisplay,
           created_at: new Date().toISOString(),
           expires_at: new Date(Date.now() + 10 * 60_000).toISOString(),
         },
@@ -110,6 +115,9 @@ function describeAction(toolName: string, args: Record<string, unknown>): string
     const path = typeof args['path'] === 'string' ? (args['path'] as string) : 'file';
     return `${toolName} ${path}`;
   }
+  if (toolName === 'session_draft' && args['action'] === 'request_publish') {
+    return `publish draft to ${String(args['targetPath'] ?? 'file')}`;
+  }
   return toolName;
 }
 
@@ -130,6 +138,9 @@ function buildToolInputDisplay(toolName: string, args: Record<string, unknown>):
       old_string: typeof args['old_string'] === 'string' ? (args['old_string'] as string) : undefined,
       new_string: typeof args['new_string'] === 'string' ? (args['new_string'] as string) : undefined,
     };
+  }
+  if (toolName === 'session_draft' && args['action'] === 'request_publish') {
+    return { kind: 'file_write', path: args['targetPath'] };
   }
   return undefined;
 }

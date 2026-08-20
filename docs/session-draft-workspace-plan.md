@@ -1,13 +1,13 @@
 # 会话草稿工作台开发方案
 
-- 状态：阶段 1 已实现，待浏览器验收
+- 状态：阶段 1、阶段 2 均已完成页面验收
 - 记录日期：2026-08-20
 - 决策姿态：分阶段建设会话级能力，不扩张为通用文档平台
 - 首次验收点：会话开关、Agent 创建草稿、对话卡片、上下文压缩
 
 ## 实施记录（2026-08-20）
 
-阶段 1 已落地，当前等待页面验收，尚未提交 Git：
+阶段 1 已通过页面验收并提交：
 
 - `+` 菜单草稿入口、Swarm 风格激活控件及 hover/focus 关闭；
 - 会话级开关持久化，关闭时移除工具 schema 和能力提示；
@@ -18,8 +18,16 @@
 - 草稿卡片、只读查看和复制全文。
 - 草稿卡片支持“引用”，复用消息引用 chip；发送时只携带草稿 ID、固定 revision 和有界摘录，不注入全文。
 
-自动验证：服务端 TypeScript 类型检查通过，91 项测试通过。阶段 2 的发布审批、保存到本地、
-fork 复制和删除回收站仍按原计划保留，待本轮体验验收后再开发。
+阶段 2 已完成页面验收：
+
+- `request_publish` 固定 revision，始终进入原生审批；审批展示绝对路径和文件内容，批准后原子写入；
+- 目标路径限制在会话工作区内；文件已存在时必须显式携带 overwrite 并再次审批；
+- 草稿卡片可直接保存 Markdown，不产生模型请求；
+- 查看弹窗可切换 revision；
+- 完整 fork 复制草稿，按消息分叉只复制分叉点前可见草稿，side chat 不继承；
+- 会话删除时草稿进入回收站，服务启动时清理超过 30 天的记录。
+
+自动验证：服务端 TypeScript 类型检查通过，95 项测试通过。
 
 ## 原始需求留档
 
@@ -365,10 +373,11 @@ PUT  /api/v1/sessions/{id}/draft-settings
 GET  /api/v1/sessions/{id}/drafts
 GET  /api/v1/sessions/{id}/drafts/{draftId}
 GET  /api/v1/sessions/{id}/drafts/{draftId}/revisions/{revision}
-POST /api/v1/sessions/{id}/drafts/{draftId}:publish
+GET  /api/v1/sessions/{id}/drafts/{draftId}/revisions
 ```
 
-开关 PUT 幂等；busy 时记录待应用状态或返回冲突，第一阶段优先返回明确冲突。发布接口要求固定 revision、目标路径和覆盖决策。
+开关 PUT 幂等；busy 时返回明确冲突。发布只通过 `session_draft.request_publish` 进入统一审批链路，
+不提供绕过审批的 REST 写入接口。
 
 ### 冻结版 WebUI adapter
 

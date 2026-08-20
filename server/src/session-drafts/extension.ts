@@ -13,18 +13,20 @@ export function excerptOf(content: string, limit = 120): string {
   return segments.slice(0, limit).map((item) => item.segment).join('') + (segments.length > limit ? '…' : '');
 }
 
-export function createSessionDraftExtension(options: { sessionId: string; store: SessionDraftStore; enabled: () => boolean }) {
+export function createSessionDraftExtension(options: { sessionId: string; cwd: string; store: SessionDraftStore; enabled: () => boolean }) {
   return (pi: ExtensionAPI) => {
     pi.registerTool({
       name: SESSION_DRAFT_TOOL,
       label: 'Session draft',
-      description: 'Create, list, read, or update provisional documents isolated to this session.',
+      description: 'Create, list, read, update, or request publishing of provisional documents isolated to this session.',
       parameters: Type.Object({
-        action: Type.Union([Type.Literal('create'), Type.Literal('list'), Type.Literal('read'), Type.Literal('update')]),
+        action: Type.Union([Type.Literal('create'), Type.Literal('list'), Type.Literal('read'), Type.Literal('update'), Type.Literal('request_publish')]),
         draftId: Type.Optional(Type.String()),
         title: Type.Optional(Type.String()),
         content: Type.Optional(Type.String()),
         expectedRevision: Type.Optional(Type.Number()),
+        targetPath: Type.Optional(Type.String()),
+        overwrite: Type.Optional(Type.Boolean()),
       }),
       async execute(_id, params) {
         if (!options.enabled()) throw new Error('Session drafts are disabled');
@@ -39,6 +41,18 @@ export function createSessionDraftExtension(options: { sessionId: string; store:
         }
         if (!params.draftId) throw new Error(`${params.action} requires draftId`);
         if (params.action === 'read') return result('read', await store.read(sessionId, params.draftId), true);
+        if (params.action === 'request_publish') {
+          if (params.expectedRevision === undefined || !params.targetPath) throw new Error('request_publish requires expectedRevision and targetPath');
+          const published = await store.publish({
+            sessionId,
+            draftId: params.draftId,
+            revision: params.expectedRevision,
+            targetPath: params.targetPath,
+            cwd: options.cwd,
+            overwrite: params.overwrite === true,
+          });
+          return result('published', published, false, { path: published.path, overwritten: published.overwritten });
+        }
         if (params.content === undefined || params.expectedRevision === undefined) throw new Error('update requires content and expectedRevision');
         return result('updated', await store.update(sessionId, params.draftId, params.expectedRevision, params.content, params.title));
       },
@@ -89,7 +103,12 @@ export function compressDraftHistory(messages: AgentMessage[], all = false): Age
   return result;
 }
 
-function result(status: 'created' | 'read' | 'updated', value: Awaited<ReturnType<SessionDraftStore['read']>>, includeContent = false) {
+function result(
+  status: 'created' | 'read' | 'updated' | 'published',
+  value: Awaited<ReturnType<SessionDraftStore['read']>>,
+  includeContent = false,
+  extra: Record<string, unknown> = {},
+) {
   const metadata = {
     status,
     draftId: value.draftId,
@@ -98,6 +117,7 @@ function result(status: 'created' | 'read' | 'updated', value: Awaited<ReturnTyp
     excerpt: excerptOf(value.content),
     digest: value.digest,
     ...(includeContent ? { content: value.content } : {}),
+    ...extra,
   };
   return { content: [{ type: 'text' as const, text: JSON.stringify(metadata) }], details: undefined };
 }

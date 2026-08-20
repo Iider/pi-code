@@ -737,6 +737,21 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     }
   });
 
+  app.get('/api/v1/sessions/:id/drafts/:draftId/revisions', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id, draftId } = req.params as { id: string; draftId: string };
+    try { await sendOk(reply, { items: await bridge.listDraftRevisions(id, draftId) }, requestId); }
+    catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof DraftNotFoundError) {
+        reply.statusCode = 404;
+        await reply.send(fail(ErrorCodes.MESSAGE_NOT_FOUND, error.message, requestId));
+        return;
+      }
+      throw error;
+    }
+  });
+
   app.post('/api/v1/sessions/:id/profile', async (req, reply) => {
     const requestId = newRequestId();
     const { id } = req.params as { id: string };

@@ -177,6 +177,7 @@ export class PiBridge {
 
   async init(): Promise<void> {
     this.modelRuntime = await ModelRuntime.create({});
+    await this.draftStore.cleanupTrash(join(serverHomeDir(), 'trash', 'session-drafts'), 30 * 24 * 60 * 60 * 1000);
   }
 
   /** Shared canonical runtime used by sessions and model configuration. */
@@ -267,6 +268,7 @@ export class PiBridge {
         hidden: true,
         factory: createSessionDraftExtension({
           sessionId: sessionManager.getSessionId(),
+          cwd,
           store: this.draftStore,
           enabled: () => sessionDraftEnabled(sessionManager.getBranch()),
         }),
@@ -382,7 +384,8 @@ export class PiBridge {
       if (!forkedFile) throw new SessionNotPersistedError(sessionId);
       sessionManager = SessionManager.open(forkedFile, dirname(source.file));
     }
-    return this.registerForkedSession(source, sessionManager, title, 'fork');
+    const visibleDraftIds = draftIdsBeforeEntry(source.session.sessionManager.getBranch(), forkPoint.id);
+    return this.registerForkedSession(source, sessionManager, title, 'fork', visibleDraftIds);
   }
 
   private async registerForkedSession(
@@ -390,6 +393,7 @@ export class PiBridge {
     sessionManager: SessionManager,
     title: string | undefined,
     childSessionKind: 'fork' | 'side_chat',
+    visibleDraftIds?: Set<string>,
   ): Promise<BridgeSession> {
     const session = await this.createManagedAgentSession(source.cwd, sessionManager);
     const now = new Date();
@@ -407,6 +411,7 @@ export class PiBridge {
     this.emit(entry, 'session.meta.updated', {
       patch: { title: entry.title, parentSessionId: source.id, childSessionKind },
     });
+    if (childSessionKind === 'fork') await this.draftStore.copySession(source.id, entry.id, visibleDraftIds);
     return entry;
   }
 
@@ -493,6 +498,20 @@ export class PiBridge {
             true,
           );
         }
+      },
+      toolInputDisplay: async (toolName, args) => {
+        if (toolName !== SESSION_DRAFT_TOOL || args['action'] !== 'request_publish') return undefined;
+        const draftId = typeof args['draftId'] === 'string' ? args['draftId'] : '';
+        const revision = typeof args['expectedRevision'] === 'number' ? args['expectedRevision'] : undefined;
+        const targetPath = typeof args['targetPath'] === 'string' ? args['targetPath'] : '';
+        const draft = await this.draftStore.read(id, draftId, revision);
+        const path = isAbsolute(targetPath) ? resolve(targetPath) : resolve(entry.cwd, targetPath);
+        return {
+          kind: 'diff',
+          path,
+          old_text: existsSync(path) ? readFileSync(path, 'utf8') : '',
+          new_text: draft.content,
+        };
       },
     });
 
@@ -865,6 +884,7 @@ export class PiBridge {
     if (!session.archived) throw new SessionNotArchivedError(sessionId);
     if (session.busy) throw new SessionBusyError(sessionId);
 
+    await this.draftStore.trashSession(sessionId, join(serverHomeDir(), 'trash', 'session-drafts'));
     unlinkSync(session.file);
     this.sessions.delete(sessionId);
     delete this.meta[sessionId];
@@ -950,6 +970,11 @@ export class PiBridge {
   async readDraft(sessionId: string, draftId: string, revision?: number) {
     await this.openSession(sessionId);
     return this.draftStore.read(sessionId, draftId, revision);
+  }
+
+  async listDraftRevisions(sessionId: string, draftId: string) {
+    await this.openSession(sessionId);
+    return this.draftStore.listRevisions(sessionId, draftId);
   }
 
   resolveApproval(sessionId: string, approvalId: string, approved: boolean, feedback?: string): { resolved: boolean } {
@@ -1038,6 +1063,23 @@ function sessionDraftEnabled(branch: ReturnType<SessionManager['getBranch']>): b
     if (data.version === 1 && typeof data.enabled === 'boolean') enabled = data.enabled;
   }
   return enabled;
+}
+
+function draftIdsBeforeEntry(branch: ReturnType<SessionManager['getBranch']>, entryId: string): Set<string> {
+  const ids = new Set<string>();
+  for (const entry of branch) {
+    if (entry.type === 'message' && entry.message.role === 'toolResult' && entry.message.toolName === SESSION_DRAFT_TOOL) {
+      const text = entry.message.content.find((part) => part.type === 'text');
+      if (text?.type === 'text') {
+        try {
+          const draftId = (JSON.parse(text.text) as { draftId?: unknown }).draftId;
+          if (typeof draftId === 'string') ids.add(draftId);
+        } catch { /* Ignore malformed historical tool output. */ }
+      }
+    }
+    if (entry.id === entryId) break;
+  }
+  return ids;
 }
 
 export function workspaceIdFor(root: string): string {

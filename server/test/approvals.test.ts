@@ -11,6 +11,8 @@ describe('needsApproval', () => {
     ['all', 'bash', { command: 'ls' }, true],
     ['all', 'write', { path: 'a.txt' }, true],
     ['all', 'read', { path: 'a.txt' }, false],
+    ['none', 'session_draft', { action: 'request_publish', targetPath: 'a.md' }, true],
+    ['dangerous', 'session_draft', { action: 'update' }, false],
   ];
   for (const [policy, tool, args, expected] of cases) {
     it(`${policy}/${tool} → ${expected}`, () => {
@@ -116,5 +118,27 @@ describe('installApprovalGate', () => {
     const result = await gate({ toolCall: { id: 'tc4', name: 'read' }, args: { path: 'x' } });
     expect(approvalSeen).toBe(false);
     expect(result).toBeUndefined();
+  });
+
+  it('always gates draft publishing and forwards its diff display', async () => {
+    const agent = fakeAgent();
+    const approvals: { wire: { tool_input_display?: unknown }; resolve(d: { approved: boolean }): void }[] = [];
+    installApprovalGate(agent as never, {
+      sessionId: 's1',
+      policy: 'none',
+      turnId: () => 1,
+      onApproval: (record) => approvals.push(record),
+      onSettled: () => undefined,
+      toolInputDisplay: async () => ({ kind: 'diff', path: '/work/plan.md', old_text: '', new_text: 'draft' }),
+    });
+    const gate = agent.beforeToolCall as (ctx: unknown) => Promise<unknown>;
+    const pending = gate({
+      toolCall: { id: 'tc5', name: 'session_draft' },
+      args: { action: 'request_publish', draftId: 'd1', expectedRevision: 1, targetPath: 'plan.md' },
+    });
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    expect(approvals[0]?.wire.tool_input_display).toEqual(expect.objectContaining({ kind: 'diff', new_text: 'draft' }));
+    approvals[0]!.resolve({ approved: false });
+    expect(await pending).toEqual(expect.objectContaining({ block: true }));
   });
 });

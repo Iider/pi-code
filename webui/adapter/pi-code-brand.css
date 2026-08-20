@@ -983,8 +983,11 @@ html.pi-code-desktop .chat-header input {
 .pi-draft-head, .pi-draft-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .pi-draft-head span:first-child { display: flex; align-items: center; min-width: 0; }
 .pi-draft-card p { margin: 8px 0; overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.pi-draft-card small { display: block; overflow: hidden; margin: -2px 0 8px; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
 .pi-draft-actions { justify-content: flex-end; }
 .pi-draft-actions button, .pi-draft-head button { border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; }
 .pi-draft-dialog { width: min(720px, calc(100vw - 32px)); }
 .pi-draft-body { max-height: 70vh; overflow: auto; padding: 16px; }
 .pi-draft-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }
+.pi-draft-dialog .pi-delete-head label { display: flex; align-items: center; gap: 6px; margin-left: auto; color: var(--color-text-muted); font-size: 12px; }
+.pi-draft-dialog .pi-delete-head select { border: .5px solid var(--color-line); border-radius: var(--radius-sm, 6px); background: var(--color-surface-raised); color: inherit; }

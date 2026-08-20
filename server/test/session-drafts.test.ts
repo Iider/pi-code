@@ -1,10 +1,10 @@
-import { mkdtemp, readFile } from 'node:fs/promises';
+import { access, mkdtemp, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import type { AgentMessage } from '@earendil-works/pi-agent-core';
 import { compressDraftHistory, excerptOf } from '../src/session-drafts/extension.ts';
-import { DraftConflictError, SessionDraftStore } from '../src/session-drafts/store.ts';
+import { DraftConflictError, DraftPublishError, SessionDraftStore } from '../src/session-drafts/store.ts';
 
 describe('session draft store', () => {
   it('creates immutable revisions and rejects stale updates', async () => {
@@ -21,6 +21,34 @@ describe('session draft store', () => {
 
   it('uses grapheme-safe excerpts', () => {
     expect(excerptOf('👨‍👩‍👧‍👦'.repeat(121))).toBe(`${'👨‍👩‍👧‍👦'.repeat(120)}…`);
+  });
+
+  it('publishes a fixed revision, copies forks, and trashes deleted sessions', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'pi-code-drafts-'));
+    const workspace = await mkdtemp(join(tmpdir(), 'pi-code-workspace-'));
+    const trash = await mkdtemp(join(tmpdir(), 'pi-code-trash-'));
+    const store = new SessionDraftStore(root);
+    const created = await store.create('source', 'Plan', 'revision one');
+    const excluded = await store.create('source', 'Later', 'not visible at fork point');
+    await store.update('source', created.draftId, 1, 'revision two');
+    const published = await store.publish({
+      sessionId: 'source', draftId: created.draftId, revision: 1,
+      targetPath: 'docs/plan.md', cwd: workspace, overwrite: false,
+    });
+    expect(await readFile(join(workspace, 'docs', 'plan.md'), 'utf8')).toBe('revision one');
+    expect(published.draft.published?.revision).toBe(1);
+
+    await store.copySession('source', 'fork', new Set([created.draftId]));
+    expect((await store.read('fork', created.draftId, 2)).content).toBe('revision two');
+    expect((await store.list('fork'))[0]?.sessionId).toBe('fork');
+    await expect(store.read('fork', excluded.draftId)).rejects.toThrow();
+    await expect(store.publish({
+      sessionId: 'fork', draftId: created.draftId, revision: 1,
+      targetPath: '../outside.md', cwd: workspace, overwrite: false,
+    })).rejects.toBeInstanceOf(DraftPublishError);
+
+    await store.trashSession('source', trash);
+    await expect(access(join(root, 'source'))).rejects.toThrow();
   });
 });
 

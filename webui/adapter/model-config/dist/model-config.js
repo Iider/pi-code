@@ -242,17 +242,18 @@ function enhanceDraftCards(sessionId) {
     if (!text?.includes('"draftId"') || !text.includes('"revision"')) continue;
     let metadata;
     try { metadata = JSON.parse(text); } catch { continue; }
-    if (!metadata.draftId || !['created', 'updated', 'read'].includes(metadata.status)) continue;
+    if (!metadata.draftId || !['created', 'updated', 'read', 'published'].includes(metadata.status)) continue;
     const host = node.closest('.p-tool-row, .tool-call, .tool, [class*="tool-call"]') ?? node;
     host.classList.add('pi-draft-card');
     host.innerHTML = `<div class="pi-draft-head"><span>${draftIcon()} ${escapeHtml(localeText('草稿', 'Draft'))} · ${escapeHtml(metadata.title)}</span><span>r${metadata.revision}</span></div>
-      <p>${escapeHtml(metadata.excerpt ?? '')}</p><div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button></div>`;
+      <p>${escapeHtml(metadata.excerpt ?? '')}</p>${metadata.path ? `<small>${escapeHtml(metadata.path)}</small>` : ''}<div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button><button type="button" data-pi-draft-save>${escapeHtml(localeText('保存到本地', 'Save'))}</button></div>`;
     host.querySelector('[data-pi-draft-view]').addEventListener('click', () => void openDraftDialog(sessionId, metadata.draftId, metadata.revision));
     host.querySelector('[data-pi-draft-quote]').addEventListener('click', () => selectDraftQuote(sessionId, metadata));
     host.querySelector('[data-pi-draft-copy]').addEventListener('click', async () => {
       const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
       await navigator.clipboard.writeText(draft.content);
     });
+    host.querySelector('[data-pi-draft-save]').addEventListener('click', () => void saveDraftLocally(sessionId, metadata));
   }
   const turnCount = document.querySelectorAll('.a-msg.turn-anchor').length;
   if (turnCount !== draftCardsTurnCount) {
@@ -289,31 +290,34 @@ function renderProjectedDraftCards(sessionId, messages) {
       if (part.type !== 'tool_result' || part.is_error) continue;
       let metadata;
       try { metadata = JSON.parse(part.output); } catch { continue; }
-      if (!metadata.draftId || !['created', 'updated', 'read'].includes(metadata.status)) continue;
-      if (document.querySelector(`.pi-draft-card[data-draft-id="${CSS.escape(metadata.draftId)}"][data-revision="${metadata.revision}"]`)) continue;
+      if (!metadata.draftId || !['created', 'updated', 'read', 'published'].includes(metadata.status)) continue;
+      const toolCallId = part.tool_call_id ?? `${metadata.draftId}-${metadata.revision}-${metadata.status}`;
+      if (document.querySelector(`.pi-draft-card[data-tool-call-id="${CSS.escape(toolCallId)}"]`)) continue;
       const assistant = assistants.get(message.prompt_id);
       if (!assistant) continue;
       const turn = turns[assistant.index];
       const body = turn?.querySelector('.msg');
       if (!body) continue;
-      body.insertAdjacentElement('beforebegin', createDraftCard(sessionId, metadata));
+      body.insertAdjacentElement('beforebegin', createDraftCard(sessionId, metadata, toolCallId));
     }
   }
 }
 
-function createDraftCard(sessionId, metadata) {
+function createDraftCard(sessionId, metadata, toolCallId) {
   const card = document.createElement('section');
   card.className = 'pi-draft-card';
   card.dataset.draftId = metadata.draftId;
   card.dataset.revision = String(metadata.revision);
+  card.dataset.toolCallId = toolCallId;
   card.innerHTML = `<div class="pi-draft-head"><span>${draftIcon()} ${escapeHtml(localeText('草稿', 'Draft'))} · ${escapeHtml(metadata.title)}</span><span>r${metadata.revision}</span></div>
-    <p>${escapeHtml(metadata.excerpt ?? '')}</p><div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button></div>`;
+    <p>${escapeHtml(metadata.excerpt ?? '')}</p>${metadata.path ? `<small>${escapeHtml(metadata.path)}</small>` : ''}<div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button><button type="button" data-pi-draft-save>${escapeHtml(localeText('保存到本地', 'Save'))}</button></div>`;
   card.querySelector('[data-pi-draft-view]').addEventListener('click', () => void openDraftDialog(sessionId, metadata.draftId, metadata.revision));
   card.querySelector('[data-pi-draft-quote]').addEventListener('click', () => selectDraftQuote(sessionId, metadata));
   card.querySelector('[data-pi-draft-copy]').addEventListener('click', async () => {
     const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
     await navigator.clipboard.writeText(draft.content);
   });
+  card.querySelector('[data-pi-draft-save]').addEventListener('click', () => void saveDraftLocally(sessionId, metadata));
   return card;
 }
 
@@ -331,15 +335,45 @@ function selectDraftQuote(sessionId, metadata) {
 }
 
 async function openDraftDialog(sessionId, draftId, revision) {
-  const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(draftId)}?revision=${revision}`);
+  const base = `/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(draftId)}`;
+  const [draft, history] = await Promise.all([
+    apiRequest(`${base}?revision=${revision}`),
+    apiRequest(`${base}/revisions`),
+  ]);
   const overlay = document.createElement('div');
   overlay.className = 'pi-delete-overlay pi-draft-overlay';
-  overlay.innerHTML = `<section class="pi-delete-dialog pi-draft-dialog" role="dialog" aria-modal="true"><header class="pi-delete-head"><h3>${escapeHtml(draft.draft.title)} · r${draft.revision}</h3><button type="button" aria-label="Close">×</button></header><div class="pi-draft-body"><pre></pre></div></section>`;
+  overlay.innerHTML = `<section class="pi-delete-dialog pi-draft-dialog" role="dialog" aria-modal="true"><header class="pi-delete-head"><h3>${escapeHtml(draft.draft.title)}</h3><label>${escapeHtml(localeText('版本', 'Revision'))} <select>${(history.items ?? []).map((item) => `<option value="${item.revision}"${item.revision === draft.revision ? ' selected' : ''}>r${item.revision}</option>`).join('')}</select></label><button type="button" aria-label="Close">×</button></header><div class="pi-draft-body"><pre></pre></div></section>`;
   overlay.querySelector('pre').textContent = draft.content;
   const close = () => overlay.remove();
   overlay.addEventListener('mousedown', (event) => { if (event.target === overlay) close(); });
   overlay.querySelector('header button').addEventListener('click', close);
+  overlay.querySelector('select').addEventListener('change', async (event) => {
+    const selected = await apiRequest(`${base}?revision=${event.target.value}`);
+    overlay.querySelector('pre').textContent = selected.content;
+  });
   document.body.appendChild(overlay);
+}
+
+async function saveDraftLocally(sessionId, metadata) {
+  const suggestedName = `${metadata.title.replace(/[\\/:*?"<>|]/g, '-').trim() || 'draft'}.md`;
+  if (typeof window.showSaveFilePicker === 'function') {
+    const handle = await window.showSaveFilePicker({
+      suggestedName,
+      types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+    });
+    const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
+    const writable = await handle.createWritable();
+    await writable.write(draft.content);
+    await writable.close();
+    return;
+  }
+  const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
+  const url = URL.createObjectURL(new Blob([draft.content], { type: 'text/markdown;charset=utf-8' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = suggestedName;
+  link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function draftIcon() {

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import { dirname, join } from 'node:path';
+import { access, cp, mkdir, readdir, readFile, rename, rm, stat, writeFile } from 'node:fs/promises';
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path';
 
 export const MAX_DRAFT_BYTES = 256 * 1024;
 export const MAX_DRAFTS = 32;
@@ -14,6 +14,7 @@ export interface SessionDraft {
   currentRevision: number;
   createdAt: string;
   updatedAt: string;
+  published?: { revision: number; path: string; publishedAt: string };
 }
 
 export interface DraftRevision {
@@ -29,6 +30,7 @@ interface DraftIndex { version: 1; drafts: SessionDraft[] }
 export class DraftNotFoundError extends Error {}
 export class DraftConflictError extends Error {}
 export class DraftLimitError extends Error {}
+export class DraftPublishError extends Error {}
 
 export class SessionDraftStore {
   constructor(private readonly root: string) {}
@@ -63,8 +65,9 @@ export class SessionDraftStore {
     if (!draft) throw new DraftNotFoundError('Draft not found in this session');
     const target = revision ?? draft.currentRevision;
     try {
-      const content = await readFile(this.revisionPath(sessionId, draftId, target), 'utf8');
-      return { ...this.makeRevision(draftId, target, content, draft.updatedAt), draft };
+      const path = this.revisionPath(sessionId, draftId, target);
+      const [content, info] = await Promise.all([readFile(path, 'utf8'), stat(path)]);
+      return { ...this.makeRevision(draftId, target, content, info.birthtime.toISOString()), draft };
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') throw new DraftNotFoundError('Draft revision not found');
       throw error;
@@ -88,6 +91,74 @@ export class SessionDraftStore {
     if (title !== undefined) draft.title = this.validateTitle(title);
     await this.writeIndex(sessionId, index);
     return { ...revision, draft };
+  }
+
+  async listRevisions(sessionId: string, draftId: string): Promise<Array<Omit<DraftRevision, 'content'>>> {
+    const draft = (await this.readIndex(sessionId)).drafts.find((item) => item.id === draftId);
+    if (!draft) throw new DraftNotFoundError('Draft not found in this session');
+    const revisions = [];
+    for (let revision = 1; revision <= draft.currentRevision; revision++) {
+      const value = await this.read(sessionId, draftId, revision);
+      revisions.push({ draftId, revision, digest: value.digest, createdAt: value.createdAt });
+    }
+    return revisions.reverse();
+  }
+
+  async publish(input: { sessionId: string; draftId: string; revision: number; targetPath: string; cwd: string; overwrite: boolean }) {
+    const target = isAbsolute(input.targetPath) ? resolve(input.targetPath) : resolve(input.cwd, input.targetPath);
+    const within = relative(resolve(input.cwd), target);
+    if (within.startsWith('..') || isAbsolute(within) || within === '') {
+      throw new DraftPublishError('Draft target must be a file inside the session workspace');
+    }
+    const value = await this.read(input.sessionId, input.draftId, input.revision);
+    const exists = await access(target).then(() => true, () => false);
+    if (exists && !input.overwrite) throw new DraftPublishError('Target file already exists; retry with overwrite after user approval');
+    await mkdir(dirname(target), { recursive: true });
+    const temporary = join(dirname(target), `.${randomUUID()}.pi-code-draft.tmp`);
+    await writeFile(temporary, value.content, { mode: 0o600 });
+    try { await rename(temporary, target); }
+    catch (error) { await rm(temporary, { force: true }); throw error; }
+    const index = await this.readIndex(input.sessionId);
+    const draft = index.drafts.find((item) => item.id === input.draftId)!;
+    draft.published = { revision: input.revision, path: target, publishedAt: new Date().toISOString() };
+    await this.writeIndex(input.sessionId, index);
+    return { ...value, draft, path: target, overwritten: exists };
+  }
+
+  async copySession(sourceSessionId: string, targetSessionId: string, includedDraftIds?: Set<string>): Promise<void> {
+    const source = this.sessionDir(sourceSessionId);
+    if (!await access(source).then(() => true, () => false)) return;
+    const target = this.sessionDir(targetSessionId);
+    await rm(target, { recursive: true, force: true });
+    await cp(source, target, { recursive: true, errorOnExist: true });
+    const index = await this.readIndex(targetSessionId);
+    if (includedDraftIds) {
+      const excluded = index.drafts.filter((draft) => !includedDraftIds.has(draft.id));
+      await Promise.all(excluded.map((draft) => rm(join(target, 'drafts', draft.id), { recursive: true, force: true })));
+      index.drafts = index.drafts.filter((draft) => includedDraftIds.has(draft.id));
+    }
+    for (const draft of index.drafts) draft.sessionId = targetSessionId;
+    await this.writeIndex(targetSessionId, index);
+  }
+
+  async trashSession(sessionId: string, trashRoot: string): Promise<void> {
+    const source = this.sessionDir(sessionId);
+    if (!await access(source).then(() => true, () => false)) return;
+    await mkdir(trashRoot, { recursive: true });
+    await rename(source, join(trashRoot, `${encodeURIComponent(sessionId)}-${Date.now()}`));
+  }
+
+  async cleanupTrash(trashRoot: string, maxAgeMs: number): Promise<void> {
+    const entries = await readdir(trashRoot).catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    });
+    const cutoff = Date.now() - maxAgeMs;
+    await Promise.all(entries.map(async (name) => {
+      const path = join(trashRoot, name);
+      const info = await stat(path);
+      if (info.mtimeMs < cutoff) await rm(path, { recursive: true, force: true });
+    }));
   }
 
   private sessionDir(sessionId: string): string { return join(this.root, encodeURIComponent(sessionId)); }
