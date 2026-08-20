@@ -2,10 +2,10 @@
 // backed by PiBridge. Missing kimi features degrade to empty/501-style data.
 
 import Fastify, { type FastifyInstance, type FastifyRequest, type FastifyReply } from 'fastify';
-import { readdirSync, statSync, readFileSync, existsSync } from 'node:fs';
+import { readdirSync, statSync, readFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, dirname, basename, extname, relative, isAbsolute, resolve } from 'node:path';
 import { homedir } from 'node:os';
-import { createHash } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import {
   PiBridge,
   workspaceIdFor,
@@ -29,6 +29,14 @@ interface RouteContext {
   modelConfiguration?: ModelConfigurationService;
 }
 
+interface UploadedFile {
+  id: string;
+  name: string;
+  mediaType: string;
+  size: number;
+  path: string;
+}
+
 /** Split "/sessions/<id>:<action>" style segments. */
 function splitAction(raw: string): { id: string; action?: string } {
   const idx = raw.indexOf(':');
@@ -48,6 +56,11 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   const app = Fastify({ logger: false, bodyLimit: 64 * 1024 * 1024 });
   const { bridge } = ctx;
   const modelConfiguration = ctx.modelConfiguration ?? new ModelConfigurationService(bridge.getModelRuntime());
+  const uploadedFiles = new Map<string, UploadedFile>();
+
+  app.addContentTypeParser(/^multipart\/form-data(?:;.*)?$/u, { parseAs: 'buffer' }, (_request, body, done) => {
+    done(null, body);
+  });
 
   app.setErrorHandler(async (error, _request, reply) => {
     const requestId = newRequestId();
@@ -292,6 +305,45 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
   app.post('/api/v1/workspaces/:id/trust', async (_req, reply) => sendOk(reply, { trusted: true }, newRequestId()));
   app.post('/api/v1/workspaces/:id/untrust', async (_req, reply) => sendOk(reply, { trusted: false }, newRequestId()));
 
+  // --- uploaded files ------------------------------------------------------
+  app.post('/api/v1/files', async (req, reply) => {
+    const contentType = req.headers['content-type'] ?? '';
+    const boundary = multipartBoundary(contentType);
+    if (!boundary || !Buffer.isBuffer(req.body)) {
+      throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'Expected a multipart file upload');
+    }
+    const part = multipartFile(req.body, boundary);
+    if (!part) throw new ConfigurationError(400, ErrorCodes.VALIDATION, 'file is required');
+
+    const id = `file_${randomUUID()}`;
+    const name = safeUploadName(part.name);
+    const uploadRoot = join(process.env['PI_CODE_HOME'] ?? join(homedir(), '.pi-code'), 'uploads');
+    mkdirSync(uploadRoot, { recursive: true, mode: 0o700 });
+    const path = join(uploadRoot, `${id}-${name}`);
+    writeFileSync(path, part.data, { mode: 0o600 });
+    const file = { id, name, mediaType: part.mediaType, size: part.data.byteLength, path };
+    uploadedFiles.set(id, file);
+    await sendOk(reply, {
+      id: file.id,
+      name: file.name,
+      media_type: file.mediaType,
+      size: file.size,
+    }, newRequestId());
+  });
+
+  app.get('/api/v1/files/:id', async (req, reply) => {
+    const { id } = req.params as { id: string };
+    const file = uploadedFiles.get(id);
+    if (!file || !existsSync(file.path)) {
+      reply.statusCode = 404;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'File not found', newRequestId()));
+      return;
+    }
+    reply.type(file.mediaType);
+    reply.header('Content-Disposition', `inline; filename="${file.name.replaceAll('"', '')}"`);
+    await reply.send(readFileSync(file.path));
+  });
+
   // --- fs browse ------------------------------------------------------------
   // find-my-way splits static/param at the first ':' in a segment, so source
   // paths carry a DOUBLE colon and are served on the wire as single-colon
@@ -498,11 +550,12 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
     const requestId = newRequestId();
     const { id } = req.params as { id: string };
     const body = (req.body ?? {}) as {
-      content?: { type: string; text?: string; source?: { kind: string; media_type?: string; data?: string } }[];
+      content?: { type: string; text?: string; file_id?: string; name?: string; source?: { kind: string; file_id?: string; media_type?: string; data?: string } }[];
       model?: string;
     };
     try {
-      const result = await bridge.submitPrompt(id, body.content ?? [], { model: body.model });
+      const content = resolveUploadedPromptContent(body.content ?? [], uploadedFiles);
+      const result = await bridge.submitPrompt(id, content, { model: body.model });
       await sendOk(reply, result, requestId);
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
@@ -773,6 +826,71 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+function multipartBoundary(contentType: string): string | undefined {
+  const match = contentType.match(/boundary=(?:"([^"]+)"|([^;\s]+))/iu);
+  return match?.[1] ?? match?.[2];
+}
+
+function multipartFile(
+  body: Buffer,
+  boundary: string,
+): { name: string; mediaType: string; data: Buffer } | undefined {
+  const marker = Buffer.from(`--${boundary}`);
+  let cursor = 0;
+  while (cursor < body.length) {
+    const markerStart = body.indexOf(marker, cursor);
+    if (markerStart === -1) return undefined;
+    const headersStart = markerStart + marker.length + 2;
+    const headersEnd = body.indexOf(Buffer.from('\r\n\r\n'), headersStart);
+    if (headersEnd === -1) return undefined;
+    const headers = body.subarray(headersStart, headersEnd).toString('utf8');
+    const nextMarker = body.indexOf(Buffer.from(`\r\n--${boundary}`), headersEnd + 4);
+    if (nextMarker === -1) return undefined;
+    const disposition = headers.match(/^content-disposition:\s*form-data;([^\r\n]+)$/imu)?.[1] ?? '';
+    const filename = disposition.match(/filename="([^"]*)"/iu)?.[1];
+    if (filename !== undefined) {
+      const mediaType = headers.match(/^content-type:\s*([^\r\n]+)$/imu)?.[1]?.trim()
+        ?? 'application/octet-stream';
+      return {
+        name: filename,
+        mediaType,
+        data: body.subarray(headersEnd + 4, nextMarker),
+      };
+    }
+    cursor = nextMarker + 2;
+  }
+  return undefined;
+}
+
+function safeUploadName(name: string): string {
+  const safe = basename(name.replaceAll('\\', '/')).replace(/[\u0000-\u001f\u007f]/gu, '').trim();
+  return safe || 'upload';
+}
+
+function resolveUploadedPromptContent(
+  content: { type: string; text?: string; file_id?: string; name?: string; source?: { kind: string; file_id?: string; media_type?: string; data?: string } }[],
+  uploadedFiles: Map<string, UploadedFile>,
+): { type: string; text?: string; source?: { kind: string; media_type?: string; data?: string } }[] {
+  return content.flatMap((part) => {
+    const fileId = part.type === 'file' ? part.file_id : part.source?.kind === 'file' ? part.source.file_id : undefined;
+    if (!fileId) return [part];
+    const file = uploadedFiles.get(fileId);
+    if (!file || !existsSync(file.path)) {
+      throw new ConfigurationError(400, ErrorCodes.VALIDATION, `Uploaded file is unavailable: ${part.name ?? fileId}`);
+    }
+    if (part.type === 'image') {
+      return [{
+        type: 'image',
+        source: { kind: 'base64', media_type: file.mediaType, data: readFileSync(file.path).toString('base64') },
+      }];
+    }
+    return [{
+      type: 'text',
+      text: `\n[Attached file: ${file.name}]\nLocal path: ${file.path}\nRead this file with the available file tools when its contents are needed.`,
+    }];
+  });
+}
 
 function diskSessionToWire(
   s: {

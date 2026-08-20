@@ -168,6 +168,160 @@
   animation: pi-code-fork-pulse 0.8s ease-in-out infinite alternate;
 }
 
+/* Quote keeps the assistant-footer action family, but uses a speech/reference
+ * glyph so it cannot be confused with fork or copy. */
+.pi-quote-from-message {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.pi-quote-from-message svg,
+.pi-quote-chip-icon svg,
+.pi-sent-quote-icon svg,
+.pi-quote-chip-remove svg {
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.pi-quote-from-message:hover {
+  background: var(--color-hover);
+  color: var(--color-accent);
+  opacity: 1;
+}
+
+.pi-quote-from-message:focus-visible,
+.pi-quote-chip-remove:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+
+/* Quote uses the native attachment position and dimensions without borrowing
+ * file semantics. */
+.pi-quote-strip {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  padding: calc(var(--space-4) + var(--space-05)) var(--space-4) 0 calc(var(--space-4) + var(--space-05));
+}
+
+.pi-quote-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(220px, 100%);
+  padding: 4px 9px;
+  overflow: hidden;
+  border: 0.5px solid var(--color-line);
+  border-radius: 999px;
+  corner-shape: superellipse(1.5);
+  background: var(--color-well);
+  font-size: var(--ui-font-size-sm);
+}
+
+.pi-quote-chip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+}
+
+.pi-sent-quote-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  color: var(--color-text-muted);
+}
+
+/* The upstream file chip pulls its round icon past the declared left padding.
+ * Keep the icon optically centered inside the pill. */
+.att-scroll-content .att-chip {
+  --att-chip-pad-left: 9px;
+}
+
+.att-scroll-content .att-chip .att-tile {
+  margin-left: 0;
+}
+
+.pi-quote-chip .att-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+.pi-quote-chip-remove {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-text-faint);
+  cursor: pointer;
+}
+
+.pi-quote-chip-remove:hover {
+  background: var(--color-hover);
+  color: var(--color-text);
+}
+
+.pi-sent-quote {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 100%;
+  margin: 0 0 var(--space-2);
+  padding: 3px 8px 3px 4px;
+  border: 1px solid var(--color-line);
+  border-radius: 999px;
+  background: var(--color-surface-sunken);
+  color: var(--color-text-muted);
+  font-size: var(--ui-font-size-sm);
+  line-height: 1.35;
+  vertical-align: top;
+}
+
+.pi-sent-quote-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pi-quoted-message-body {
+  display: block;
+  white-space: pre-wrap;
+}
+
 .pi-fork-toast {
   position: fixed;
   right: var(--space-5);

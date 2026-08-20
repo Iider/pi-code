@@ -26,6 +26,12 @@ let adapterRefreshQueued = false;
 let archivedSessions = null;
 let archivedSessionsLoading = null;
 const deletedArchivedSessionIds = new Set();
+const QUOTE_STORAGE_KEY = 'pi-code.message-quote-drafts.v1';
+const QUOTE_HOT_LIMIT = 48;
+const QUOTE_COLD_LIMIT = 256;
+const quoteDrafts = loadQuoteDrafts();
+let preparedQuoteSubmission = null;
+let quoteRestoreTimer = null;
 
 if (IS_TAURI_DESKTOP) document.documentElement.classList.add('pi-code-desktop');
 
@@ -75,6 +81,44 @@ document.addEventListener('click', (event) => {
 
 window.addEventListener('pi-code-open-provider-settings', () => openProviderSettings());
 
+// The upstream bundle owns submission. Capture its two send affordances just
+// before Vue handles them, then let the normal composer path continue. This
+// keeps attachments, queues, authentication and optimistic rendering native.
+document.addEventListener('click', (event) => {
+  const remove = event.target.closest?.('.pi-quote-chip-remove');
+  if (remove) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    removeQuoteDraft(currentSessionId());
+    queueAdapterRefresh();
+    return;
+  }
+  const send = event.target.closest?.('.composer .send');
+  if (send && !send.disabled) prepareQuoteSubmission(send.closest('.composer'));
+}, true);
+
+document.addEventListener('keydown', (event) => {
+  const textarea = event.target.closest?.('.composer textarea.ph');
+  if (!textarea || event.isComposing || event.keyCode === 229) return;
+  const composer = textarea.closest('.composer');
+  if (!composer || composerHasOpenPicker(composer)) return;
+  const normalEnter = event.key === 'Enter' && !event.shiftKey
+    && (!composer.classList.contains('expanded') || event.metaKey || event.ctrlKey);
+  const steer = event.key.toLowerCase() === 's' && (event.metaKey || event.ctrlKey)
+    && !event.shiftKey && !event.altKey;
+  if (normalEnter || steer) prepareQuoteSubmission(composer);
+}, true);
+
+document.addEventListener('input', (event) => {
+  const textarea = event.target.closest?.('.composer textarea.ph');
+  if (!textarea || preparedQuoteSubmission?.textarea === textarea) return;
+  const parsed = parseQuoteEnvelope(textarea.value);
+  if (!parsed) return;
+  // Undo/edit may refill the composer with a stored plain-text quote envelope.
+  // Restore the chip immediately after Vue has observed the input event.
+  requestAnimationFrame(() => restoreQuoteDraftFromComposer(textarea, parsed));
+}, true);
+
 async function loadOAuthProviders() {
   try {
     const data = await apiRequest('/api/v1/catalog/providers');
@@ -104,6 +148,9 @@ function queueAdapterRefresh() {
     hideRedundantConfigureEntry();
     enhanceOAuthEntries();
     enhanceMessageForkActions();
+    enhanceMessageQuoteActions();
+    enhanceQuoteComposer();
+    enhanceQuotedUserMessages();
     enhanceArchivedSessionActions();
     enhanceDesktopWindowChrome();
   });
@@ -287,6 +334,328 @@ function showArchiveDeleteError(message) {
 
 function trashIcon() {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M10 11v6m4-6v6M9 7l1-3h4l1 3m3 0-1 14H7L6 7"/></svg>';
+}
+
+// ---------------------------------------------------------------------------
+// Message quote adapter
+// ---------------------------------------------------------------------------
+
+function enhanceMessageQuoteActions() {
+  for (const message of document.querySelectorAll('.a-msg[data-turn-id]')) {
+    const footer = message.querySelector(':scope > .a-msg-ft');
+    const copyButton = footer?.querySelector('.a-cpbtn');
+    const text = assistantFinalText(message);
+    const existing = footer?.querySelector('.pi-quote-from-message');
+    if (!footer || !copyButton || !normalizeQuoteText(text)) {
+      existing?.remove();
+      continue;
+    }
+    if (existing) continue;
+
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'pi-quote-from-message';
+    button.setAttribute('aria-label', localeText('引用这条回复', 'Quote this reply'));
+    button.title = localeText('引用这条回复', 'Quote this reply');
+    button.innerHTML = quoteIcon();
+    button.addEventListener('click', () => selectMessageQuote(message));
+
+    const copySlot = [...footer.children].find((child) => child === copyButton || child.contains(copyButton));
+    footer.insertBefore(button, copySlot?.nextSibling ?? null);
+  }
+}
+
+function assistantFinalText(message) {
+  const run = [];
+  let turn = message;
+  while (turn?.matches?.('.a-msg[data-turn-id]')) {
+    run.unshift(turn);
+    turn = turn.previousElementSibling;
+  }
+  return run
+    .flatMap((assistantTurn) => [...assistantTurn.querySelectorAll(':scope > .msg')])
+    .map((block) => block.textContent?.trim() ?? '')
+    .filter(Boolean)
+    .join('\n\n');
+}
+
+function selectMessageQuote(message) {
+  const sessionId = currentSessionId();
+  const sourceText = assistantFinalText(message);
+  if (!sessionId || !normalizeQuoteText(sourceText)) return;
+
+  const draft = {
+    turnId: message.dataset.turnId ?? '',
+    fingerprint: quoteFingerprint(sourceText),
+    fallbackExcerpt: quoteExcerpt(sourceText),
+    beforeCompaction: quoteIsBeforeLatestCompaction(message),
+  };
+  setQuoteDraft(sessionId, draft);
+  queueAdapterRefresh();
+  requestAnimationFrame(() => composerTextarea()?.focus({ preventScroll: true }));
+}
+
+function quoteIsBeforeLatestCompaction(message) {
+  const divider = [...document.querySelectorAll('.compact-divider')].at(-1);
+  return !!divider && Boolean(message.compareDocumentPosition(divider) & Node.DOCUMENT_POSITION_FOLLOWING);
+}
+
+function enhanceQuoteComposer() {
+  const sessionId = currentSessionId();
+  const composer = activeComposer();
+  if (!composer) return;
+  const draft = sessionId ? quoteDrafts.get(sessionId) : null;
+  const existingChip = composer.querySelector('.pi-quote-chip');
+  const existingStrip = composer.querySelector('.pi-quote-strip');
+  if (!draft) {
+    existingChip?.remove();
+    existingStrip?.remove();
+    return;
+  }
+  const fileRow = composer.querySelector('.att-scroll-content > .att-row:not(.att-row-media)');
+  const alreadyPlaced = fileRow
+    ? existingChip?.parentElement === fileRow
+    : existingStrip?.contains(existingChip) === true;
+  if (alreadyPlaced && existingChip?.dataset.piQuoteFingerprint === draft.fingerprint) return;
+  existingChip?.remove();
+  existingStrip?.remove();
+
+  const chip = document.createElement('span');
+  chip.className = 'att-chip pi-quote-chip';
+  chip.title = draft.fingerprint;
+  chip.dataset.piQuoteFingerprint = draft.fingerprint;
+  chip.innerHTML = `
+    <span class="att-tile pi-quote-chip-icon">${quoteIcon()}</span>
+    <span class="att-name">${escapeHtml(draft.fingerprint)}</span>
+    <button type="button" class="att-rm pi-quote-chip-remove" aria-label="${escapeHtml(localeText('移除引用', 'Remove quote'))}">${closeIcon()}</button>
+  `;
+  if (fileRow) {
+    fileRow.prepend(chip);
+    return;
+  }
+
+  const strip = document.createElement('div');
+  strip.className = 'att-strip pi-quote-strip';
+  strip.appendChild(chip);
+  const card = composer.querySelector(':scope > .composer-card');
+  if (card) card.insertBefore(strip, card.firstChild);
+}
+
+function prepareQuoteSubmission(composer) {
+  const sessionId = currentSessionId();
+  const textarea = composer?.querySelector('textarea.ph');
+  const draft = sessionId ? quoteDrafts.get(sessionId) : null;
+  if (!sessionId || !textarea || !draft || preparedQuoteSubmission?.textarea === textarea) return;
+  const existing = parseQuoteEnvelope(textarea.value);
+  if (existing) return;
+
+  preparedQuoteSubmission = {
+    sessionId,
+    textarea,
+    originalText: textarea.value,
+    draft,
+    existingMessages: new Set(document.querySelectorAll('.u-turn')),
+    messageElement: null,
+    consumed: false,
+  };
+  setComposerText(textarea, serializeQuoteEnvelope(draft, textarea.value.trim()));
+
+  clearTimeout(quoteRestoreTimer);
+  quoteRestoreTimer = setTimeout(() => recoverUnsentQuoteSubmission(), 700);
+}
+
+function recoverUnsentQuoteSubmission() {
+  const pending = preparedQuoteSubmission;
+  if (!pending || pending.consumed) return;
+  if (currentSessionId() === pending.sessionId) {
+    setQuoteDraft(pending.sessionId, pending.draft);
+    const textarea = composerTextarea();
+    if (textarea) {
+      setComposerText(textarea, pending.originalText);
+      textarea.focus({ preventScroll: true });
+    }
+  }
+  preparedQuoteSubmission = null;
+  queueAdapterRefresh();
+}
+
+function consumePreparedQuoteSubmission(messageElement, parsed) {
+  const pending = preparedQuoteSubmission;
+  if (!pending || pending.sessionId !== currentSessionId() || pending.consumed) return;
+  if (pending.existingMessages.has(messageElement)) return;
+  const expectedText = pending.draft.beforeCompaction
+    ? pending.draft.fallbackExcerpt
+    : pending.draft.fingerprint;
+  if (expectedText !== parsed.text) return;
+  pending.consumed = true;
+  pending.messageElement = messageElement;
+  removeQuoteDraft(pending.sessionId);
+  clearTimeout(quoteRestoreTimer);
+  // A rejected prompt removes its optimistic user message. Restore only in
+  // that case; a mounted message is the normal accepted/queued path.
+  quoteRestoreTimer = setTimeout(() => {
+    if (preparedQuoteSubmission !== pending) return;
+    if (!pending.messageElement?.isConnected && currentSessionId() === pending.sessionId) {
+      setQuoteDraft(pending.sessionId, pending.draft);
+      const textarea = composerTextarea();
+      if (textarea) setComposerText(textarea, pending.originalText);
+      queueAdapterRefresh();
+    }
+    preparedQuoteSubmission = null;
+  }, 15000);
+  queueAdapterRefresh();
+}
+
+function restoreQuoteDraftFromComposer(textarea, parsed) {
+  const sessionId = currentSessionId();
+  if (!sessionId || preparedQuoteSubmission?.textarea === textarea) return;
+  setQuoteDraft(sessionId, {
+    turnId: '',
+    fingerprint: parsed.kind === 'excerpt' ? quoteFingerprint(parsed.text) : parsed.text,
+    fallbackExcerpt: parsed.text,
+    beforeCompaction: parsed.kind === 'excerpt',
+  });
+  setComposerText(textarea, parsed.body);
+  queueAdapterRefresh();
+}
+
+function enhanceQuotedUserMessages() {
+  for (const textElement of document.querySelectorAll('.u-turn .u-text')) {
+    const raw = textElement.dataset.piQuoteRaw ?? textElement.textContent ?? '';
+    const parsed = parseQuoteEnvelope(raw);
+    if (!parsed) continue;
+    const message = textElement.closest('.u-turn');
+    if (!message) continue;
+    consumePreparedQuoteSubmission(message, parsed);
+    if (textElement.dataset.piQuoteRendered === raw && textElement.querySelector('.pi-sent-quote')) continue;
+
+    textElement.dataset.piQuoteRaw = raw;
+    textElement.dataset.piQuoteRendered = raw;
+    textElement.replaceChildren();
+    const chip = document.createElement('span');
+    chip.className = 'pi-sent-quote';
+    chip.title = parsed.text;
+    chip.innerHTML = `<span class="pi-sent-quote-icon">${quoteIcon()}</span><span class="pi-sent-quote-text"></span>`;
+    chip.querySelector('.pi-sent-quote-text').textContent = parsed.text;
+    textElement.appendChild(chip);
+    if (parsed.body) {
+      const body = document.createElement('span');
+      body.className = 'pi-quoted-message-body';
+      body.textContent = parsed.body;
+      textElement.appendChild(body);
+    }
+  }
+}
+
+function composerHasOpenPicker(composer) {
+  return Boolean(composer.querySelector('.slash-menu, .mention-menu, [role="listbox"]'));
+}
+
+function activeComposer() {
+  return [...document.querySelectorAll('.composer')].find((composer) => {
+    const rect = composer.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && !composer.closest('[hidden], [inert]');
+  }) ?? null;
+}
+
+function composerTextarea() {
+  return activeComposer()?.querySelector('textarea.ph') ?? null;
+}
+
+function currentSessionId() {
+  return location.pathname.match(/^\/sessions\/([^/]+)/)?.[1] ?? null;
+}
+
+function loadQuoteDrafts() {
+  try {
+    const stored = JSON.parse(sessionStorage.getItem(QUOTE_STORAGE_KEY) ?? '{}');
+    return new Map(Object.entries(stored).filter(([, draft]) => isQuoteDraft(draft)));
+  } catch {
+    return new Map();
+  }
+}
+
+function isQuoteDraft(draft) {
+  return draft && typeof draft === 'object'
+    && typeof draft.fingerprint === 'string'
+    && typeof draft.fallbackExcerpt === 'string'
+    && typeof draft.beforeCompaction === 'boolean';
+}
+
+function setQuoteDraft(sessionId, draft) {
+  quoteDrafts.set(sessionId, draft);
+  persistQuoteDrafts();
+}
+
+function removeQuoteDraft(sessionId) {
+  if (!sessionId) return;
+  quoteDrafts.delete(sessionId);
+  persistQuoteDrafts();
+}
+
+function persistQuoteDrafts() {
+  try {
+    sessionStorage.setItem(QUOTE_STORAGE_KEY, JSON.stringify(Object.fromEntries(quoteDrafts)));
+  } catch {
+    // Quoting still works for the current page when session storage is blocked.
+  }
+}
+
+function normalizeQuoteText(text) {
+  return text.replace(/\s+/gu, ' ').trim();
+}
+
+function quoteFingerprint(text) {
+  return truncateGraphemes(firstQuoteParagraph(text), QUOTE_HOT_LIMIT);
+}
+
+function quoteExcerpt(text) {
+  const graphemes = quoteGraphemes(normalizeQuoteText(text));
+  if (graphemes.length <= QUOTE_COLD_LIMIT) return graphemes.join('');
+  return `${graphemes.slice(0, 159).join('')}…${graphemes.slice(-96).join('')}`;
+}
+
+function firstQuoteParagraph(text) {
+  return normalizeQuoteText(String(text).split(/\n\s*\n/u, 1)[0] ?? text);
+}
+
+function truncateGraphemes(text, limit) {
+  const graphemes = quoteGraphemes(normalizeQuoteText(text));
+  return graphemes.length <= limit ? graphemes.join('') : `${graphemes.slice(0, Math.max(0, limit - 1)).join('')}…`;
+}
+
+function quoteGraphemes(text) {
+  if (typeof Intl.Segmenter === 'function') {
+    return [...new Intl.Segmenter(undefined, { granularity: 'grapheme' }).segment(text)].map((part) => part.segment);
+  }
+  return Array.from(text);
+}
+
+function serializeQuoteEnvelope(draft, body) {
+  const kind = draft.beforeCompaction ? 'excerpt' : 'fingerprint';
+  const text = kind === 'excerpt' ? draft.fallbackExcerpt : draft.fingerprint;
+  const tag = kind === 'excerpt' ? '[quote:excerpt]' : '[quote]';
+  return body ? `${tag} ${text}\n${body}` : `${tag} ${text}`;
+}
+
+function parseQuoteEnvelope(value) {
+  const match = String(value).match(/^\[quote(?::(excerpt))?\][ \t]*(.*?)(?:\r?\n([\s\S]*))?$/u);
+  if (!match || !match[2]?.trim()) return null;
+  return { kind: match[1] === 'excerpt' ? 'excerpt' : 'fingerprint', text: match[2].trim(), body: match[3] ?? '' };
+}
+
+function setComposerText(textarea, value) {
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')?.set;
+  setter?.call(textarea, value);
+  textarea.dispatchEvent(new Event('input', { bubbles: true }));
+}
+
+function quoteIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7.5h10M7 12h7m-7 4.5h5M5 4h14a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9l-5 3V6a2 2 0 0 1 1-2Z"/></svg>';
+}
+
+function closeIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
 }
 
 function enhanceMessageForkActions() {

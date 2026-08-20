@@ -61,6 +61,22 @@ describe('model config WebUI adapter contract', () => {
     expect(css).toContain('.pi-fork-from-message');
   });
 
+  it('adds bounded message quotes without changing the prompt transport', async () => {
+    const script = await readFile(resolve(adapterRoot, 'src', 'model-config.js'), 'utf8');
+    const css = await readFile(resolve(projectRoot, 'webui', 'adapter', 'pi-code-brand.css'), 'utf8');
+    expect(script).toContain('const QUOTE_HOT_LIMIT = 48;');
+    expect(script).toContain('const QUOTE_COLD_LIMIT = 256;');
+    expect(script).toContain(".flatMap((assistantTurn) => [...assistantTurn.querySelectorAll(':scope > .msg')])");
+    expect(script).toContain("const tag = kind === 'excerpt' ? '[quote:excerpt]' : '[quote]';");
+    expect(script).toContain("existingMessages: new Set(document.querySelectorAll('.u-turn'))");
+    expect(script).toContain('if (pending.existingMessages.has(messageElement)) return;');
+    expect(script).toContain('? pending.draft.fallbackExcerpt');
+    expect(script).not.toMatch(/window\.fetch\s*=/);
+    expect(css).toContain('.pi-quote-from-message');
+    expect(css).toContain('.pi-quote-chip');
+    expect(css).toContain('.pi-sent-quote');
+  });
+
   it('marks native desktop drag regions without relying only on the routed URL', async () => {
     const script = await readFile(resolve(adapterRoot, 'src', 'model-config.js'), 'utf8');
     expect(script).toContain('window.__PI_CODE_DESKTOP__ === true');
