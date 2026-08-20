@@ -173,6 +173,8 @@ server/vendor/protocol/  kimi-code's protocol package (reference schemas)
 - [桌面端架构与维护](docs/desktop.md)：启动链路、macOS 顶栏坐标、拖动、通知、打包和验收。
 - [会话分支开发方案](docs/session-branching-plan.md)：完整会话分叉、会话树和 Git worktree 的
   三阶段边界、接口与验收标准。
+- [Agent 回复引用开发方案](docs/message-quoting-plan.md)：引用 chip、上下文短指纹、压缩历史
+  摘录和分阶段验收边界。
 
 ## Attribution & license
 
