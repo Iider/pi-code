@@ -972,3 +972,19 @@ html.pi-code-desktop .chat-header input {
 @media (prefers-reduced-motion: reduce) {
   .pi-oauth-spinner { animation-duration: 0.001ms; }
 }
+
+.pi-draft-chip { position: relative; border: 0; color: inherit; cursor: pointer; }
+.pi-draft-chip svg, .pi-draft-head svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+.pi-draft-close { display: none; font-size: 16px; line-height: 1; }
+.pi-draft-chip:hover > svg, .pi-draft-chip:hover .swarm-label,
+.pi-draft-chip:focus-visible > svg, .pi-draft-chip:focus-visible .swarm-label { display: none; }
+.pi-draft-chip:hover .pi-draft-close, .pi-draft-chip:focus-visible .pi-draft-close { display: inline; }
+.pi-draft-card { display: block !important; padding: 10px 12px !important; border: .5px solid var(--color-line) !important; border-radius: var(--radius-md, 8px) !important; }
+.pi-draft-head, .pi-draft-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.pi-draft-head span:first-child { display: flex; align-items: center; min-width: 0; }
+.pi-draft-card p { margin: 8px 0; overflow: hidden; color: var(--color-text-muted); text-overflow: ellipsis; white-space: nowrap; }
+.pi-draft-actions { justify-content: flex-end; }
+.pi-draft-actions button, .pi-draft-head button { border: 0; background: transparent; color: var(--color-text-muted); cursor: pointer; }
+.pi-draft-dialog { width: min(720px, calc(100vw - 32px)); }
+.pi-draft-body { max-height: 70vh; overflow: auto; padding: 16px; }
+.pi-draft-body pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: inherit; }

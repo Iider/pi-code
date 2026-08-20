@@ -34,6 +34,14 @@ let preparedQuoteSubmission = null;
 let quoteRestoreTimer = null;
 let contextMaskSessionId = null;
 let contextMaskTurns = new Map();
+let draftSessionId = null;
+let draftEnabled = false;
+let draftSettingsLoading = null;
+let draftCardsLoading = null;
+let draftCardsSessionId = null;
+let draftCardsLastLoadAt = 0;
+let draftCardsTurnCount = -1;
+let draftCardsAttempts = 0;
 
 if (IS_TAURI_DESKTOP) document.documentElement.classList.add('pi-code-desktop');
 
@@ -46,6 +54,13 @@ new MutationObserver(queueAdapterRefresh).observe(document.documentElement, {
 queueAdapterRefresh();
 
 document.addEventListener('click', (event) => {
+  const draftToggle = event.target.closest?.('[data-pi-draft-toggle]');
+  if (draftToggle) {
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    void setDraftEnabled(draftToggle.dataset.piDraftToggle === 'on');
+    return;
+  }
   const target = event.target.closest?.('button, a, [role="menuitem"]');
   if (!target?.closest(OFFICIAL_SURFACE) || forwardingOnboarding) return;
   const text = target.textContent.trim();
@@ -152,11 +167,183 @@ function queueAdapterRefresh() {
     enhanceMessageForkActions();
     enhanceMessageQuoteActions();
     enhanceContextMaskActions();
+    enhanceSessionDrafts();
     enhanceQuoteComposer();
     enhanceQuotedUserMessages();
     enhanceArchivedSessionActions();
     enhanceDesktopWindowChrome();
   });
+}
+
+function enhanceSessionDrafts() {
+  const sessionId = currentSessionId();
+  if (!sessionId) return;
+  if (draftSessionId !== sessionId) {
+    draftSessionId = sessionId;
+    draftEnabled = false;
+    draftSettingsLoading = apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/draft-settings`)
+      .then((settings) => { draftEnabled = settings.enabled === true; })
+      .catch(() => {})
+      .finally(() => { draftSettingsLoading = null; queueAdapterRefresh(); });
+  }
+
+  const swarmMenuItem = visibleControls('button, [role="menuitem"]').find((item) => /swarm/i.test(item.textContent));
+  if (swarmMenuItem && !swarmMenuItem.parentElement.querySelector('[data-pi-draft-toggle]')) {
+    const item = swarmMenuItem.cloneNode(true);
+    item.dataset.piDraftToggle = 'on';
+    item.removeAttribute('aria-describedby');
+    const textNodes = [...item.querySelectorAll('*')].filter((node) => node.children.length === 0 && /swarm/i.test(node.textContent));
+    (textNodes[0] ?? item).textContent = localeText('草稿', 'Draft');
+    const description = [...item.querySelectorAll('*')].find((node) => /agent|模式|mode|协作/i.test(node.textContent) && node !== textNodes[0]);
+    if (description) description.textContent = localeText('让 Agent 暂存未落地的方案和文稿', 'Let Agent keep provisional documents');
+    item.setAttribute('aria-checked', String(draftEnabled));
+    swarmMenuItem.insertAdjacentElement('afterend', item);
+  }
+
+  const toolbar = activeComposer()?.querySelector('.toolbar-left');
+  let chip = toolbar?.querySelector('.pi-draft-chip');
+  if (draftEnabled && toolbar && !chip) {
+    chip = document.createElement('button');
+    chip.type = 'button';
+    chip.className = 'swarm-chip pi-draft-chip';
+    chip.dataset.piDraftToggle = 'off';
+    chip.setAttribute('aria-label', localeText('关闭草稿', 'Disable drafts'));
+    chip.innerHTML = `${draftIcon()}<span class="swarm-label">${escapeHtml(localeText('草稿', 'Draft'))}</span><span class="pi-draft-close">×</span>`;
+    toolbar.appendChild(chip);
+  } else if (!draftEnabled) chip?.remove();
+
+  enhanceDraftCards(sessionId);
+}
+
+async function setDraftEnabled(enabled) {
+  const sessionId = currentSessionId();
+  if (!sessionId || draftSettingsLoading) return;
+  try {
+    const settings = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/draft-settings`, {
+      method: 'PUT', body: JSON.stringify({ enabled }),
+    });
+    draftEnabled = settings.enabled === true;
+    document.querySelectorAll('[data-pi-draft-toggle="on"]').forEach((item) => item.closest('[role="menu"]')?.remove());
+    queueAdapterRefresh();
+  } catch (error) { showContextMaskToast(error instanceof Error ? error.message : String(error)); }
+}
+
+function enhanceDraftCards(sessionId) {
+  if (draftCardsSessionId !== sessionId) {
+    draftCardsSessionId = sessionId;
+    draftCardsLoading = null;
+    draftCardsLastLoadAt = 0;
+    draftCardsTurnCount = -1;
+    draftCardsAttempts = 0;
+  }
+  for (const node of document.querySelectorAll('.chat pre, .chat code, .chat .tool-result, .chat [class*="tool"]')) {
+    if (node.closest('.pi-draft-card')) continue;
+    const text = node.textContent?.trim();
+    if (!text?.includes('"draftId"') || !text.includes('"revision"')) continue;
+    let metadata;
+    try { metadata = JSON.parse(text); } catch { continue; }
+    if (!metadata.draftId || !['created', 'updated', 'read'].includes(metadata.status)) continue;
+    const host = node.closest('.p-tool-row, .tool-call, .tool, [class*="tool-call"]') ?? node;
+    host.classList.add('pi-draft-card');
+    host.innerHTML = `<div class="pi-draft-head"><span>${draftIcon()} ${escapeHtml(localeText('草稿', 'Draft'))} · ${escapeHtml(metadata.title)}</span><span>r${metadata.revision}</span></div>
+      <p>${escapeHtml(metadata.excerpt ?? '')}</p><div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button></div>`;
+    host.querySelector('[data-pi-draft-view]').addEventListener('click', () => void openDraftDialog(sessionId, metadata.draftId, metadata.revision));
+    host.querySelector('[data-pi-draft-quote]').addEventListener('click', () => selectDraftQuote(sessionId, metadata));
+    host.querySelector('[data-pi-draft-copy]').addEventListener('click', async () => {
+      const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
+      await navigator.clipboard.writeText(draft.content);
+    });
+  }
+  const turnCount = document.querySelectorAll('.a-msg.turn-anchor').length;
+  if (turnCount !== draftCardsTurnCount) {
+    draftCardsTurnCount = turnCount;
+    draftCardsAttempts = 0;
+  }
+  if (!draftCardsLoading && draftCardsAttempts < 4 && Date.now() - draftCardsLastLoadAt > 1000) {
+    draftCardsLastLoadAt = Date.now();
+    draftCardsAttempts += 1;
+    draftCardsLoading = apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/messages`)
+      .then((page) => renderProjectedDraftCards(sessionId, page.items ?? []))
+      .catch(() => {})
+      .finally(() => {
+        draftCardsLoading = null;
+        if (draftCardsAttempts < 4) setTimeout(queueAdapterRefresh, 1100);
+      });
+  }
+}
+
+function renderProjectedDraftCards(sessionId, messages) {
+  const assistantByPrompt = new Map();
+  for (const message of messages) {
+    if (message.role === 'assistant' && message.content?.some((item) => item.type === 'text')) {
+      assistantByPrompt.set(message.prompt_id, message);
+    }
+  }
+  const assistants = new Map([...assistantByPrompt.entries()].map(([promptId, message], index) => (
+    [promptId, { message, index }]
+  )));
+  const turns = [...document.querySelectorAll('.a-msg.turn-anchor')];
+  for (const message of messages) {
+    if (message.role !== 'tool') continue;
+    for (const part of message.content ?? []) {
+      if (part.type !== 'tool_result' || part.is_error) continue;
+      let metadata;
+      try { metadata = JSON.parse(part.output); } catch { continue; }
+      if (!metadata.draftId || !['created', 'updated', 'read'].includes(metadata.status)) continue;
+      if (document.querySelector(`.pi-draft-card[data-draft-id="${CSS.escape(metadata.draftId)}"][data-revision="${metadata.revision}"]`)) continue;
+      const assistant = assistants.get(message.prompt_id);
+      if (!assistant) continue;
+      const turn = turns[assistant.index];
+      const body = turn?.querySelector('.msg');
+      if (!body) continue;
+      body.insertAdjacentElement('beforebegin', createDraftCard(sessionId, metadata));
+    }
+  }
+}
+
+function createDraftCard(sessionId, metadata) {
+  const card = document.createElement('section');
+  card.className = 'pi-draft-card';
+  card.dataset.draftId = metadata.draftId;
+  card.dataset.revision = String(metadata.revision);
+  card.innerHTML = `<div class="pi-draft-head"><span>${draftIcon()} ${escapeHtml(localeText('草稿', 'Draft'))} · ${escapeHtml(metadata.title)}</span><span>r${metadata.revision}</span></div>
+    <p>${escapeHtml(metadata.excerpt ?? '')}</p><div class="pi-draft-actions"><button type="button" data-pi-draft-view>${escapeHtml(localeText('查看', 'View'))}</button><button type="button" data-pi-draft-quote>${escapeHtml(localeText('引用', 'Quote'))}</button><button type="button" data-pi-draft-copy>${escapeHtml(localeText('复制', 'Copy'))}</button></div>`;
+  card.querySelector('[data-pi-draft-view]').addEventListener('click', () => void openDraftDialog(sessionId, metadata.draftId, metadata.revision));
+  card.querySelector('[data-pi-draft-quote]').addEventListener('click', () => selectDraftQuote(sessionId, metadata));
+  card.querySelector('[data-pi-draft-copy]').addEventListener('click', async () => {
+    const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(metadata.draftId)}?revision=${metadata.revision}`);
+    await navigator.clipboard.writeText(draft.content);
+  });
+  return card;
+}
+
+function selectDraftQuote(sessionId, metadata) {
+  const reference = `draft:${metadata.draftId}@r${metadata.revision}`;
+  const title = `${localeText('草稿', 'Draft')} · ${metadata.title} · r${metadata.revision}`;
+  setQuoteDraft(sessionId, {
+    turnId: reference,
+    fingerprint: truncateGraphemes(title, QUOTE_HOT_LIMIT),
+    fallbackExcerpt: quoteExcerpt(`${reference} ${metadata.excerpt ?? metadata.title}`),
+    beforeCompaction: true,
+  });
+  queueAdapterRefresh();
+  requestAnimationFrame(() => composerTextarea()?.focus({ preventScroll: true }));
+}
+
+async function openDraftDialog(sessionId, draftId, revision) {
+  const draft = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/drafts/${encodeURIComponent(draftId)}?revision=${revision}`);
+  const overlay = document.createElement('div');
+  overlay.className = 'pi-delete-overlay pi-draft-overlay';
+  overlay.innerHTML = `<section class="pi-delete-dialog pi-draft-dialog" role="dialog" aria-modal="true"><header class="pi-delete-head"><h3>${escapeHtml(draft.draft.title)} · r${draft.revision}</h3><button type="button" aria-label="Close">×</button></header><div class="pi-draft-body"><pre></pre></div></section>`;
+  overlay.querySelector('pre').textContent = draft.content;
+  const close = () => overlay.remove();
+  overlay.addEventListener('mousedown', (event) => { if (event.target === overlay) close(); });
+  overlay.querySelector('header button').addEventListener('click', close);
+  document.body.appendChild(overlay);
+}
+
+function draftIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h10l4 4v14H5zM15 3v5h4M8 12h8M8 16h8"/></svg>';
 }
 
 function enhanceArchivedSessionActions() {

@@ -179,6 +179,8 @@ server/vendor/protocol/  kimi-code's protocol package (reference schemas)
   摘录和分阶段验收边界。
 - [会话轮次上下文屏蔽开发方案](docs/context-turn-masking-plan.md)：界面保留历史、模型上下文
   按完整轮次过滤，以及 compaction 边界和验收标准。
+- [会话草稿工作台开发方案](docs/session-draft-workspace-plan.md)：Agent 会话级草稿、按需工具与
+  synthetic user 注入、草稿卡片、上下文压缩和本地发布边界。
 
 ## Attribution & license
 

@@ -21,6 +21,7 @@ import { ErrorCodes, fail, newRequestId, ok } from './envelope.ts';
 import { checkToken } from './token.ts';
 import { ModelConfigurationService } from './models/configuration-service.ts';
 import { ConfigurationError, redactText } from './models/errors.ts';
+import { DraftNotFoundError } from './session-drafts/store.ts';
 
 interface RouteContext {
   bridge: PiBridge;
@@ -672,6 +673,63 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       }
       if (error instanceof ContextMaskTargetError) {
         reply.statusCode = 400;
+        await reply.send(fail(ErrorCodes.MESSAGE_NOT_FOUND, error.message, requestId));
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.get('/api/v1/sessions/:id/draft-settings', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    try { await sendOk(reply, await bridge.getDraftSettings(id), requestId); }
+    catch (error) { if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId); throw error; }
+  });
+
+  app.put('/api/v1/sessions/:id/draft-settings', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    const { enabled } = (req.body ?? {}) as { enabled?: unknown };
+    if (typeof enabled !== 'boolean') {
+      reply.statusCode = 400;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'enabled must be a boolean', requestId));
+      return;
+    }
+    try { await sendOk(reply, await bridge.setDraftSettings(id, enabled), requestId); }
+    catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof SessionBusyError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.SESSION_BUSY, 'Session is busy and draft mode cannot be changed', requestId));
+        return;
+      }
+      throw error;
+    }
+  });
+
+  app.get('/api/v1/sessions/:id/drafts', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    try { await sendOk(reply, { items: await bridge.listDrafts(id) }, requestId); }
+    catch (error) { if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId); throw error; }
+  });
+
+  app.get('/api/v1/sessions/:id/drafts/:draftId', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id, draftId } = req.params as { id: string; draftId: string };
+    const revisionValue = (req.query as { revision?: string }).revision;
+    const revision = revisionValue === undefined ? undefined : Number(revisionValue);
+    if (revision !== undefined && (!Number.isInteger(revision) || revision < 1)) {
+      reply.statusCode = 400;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'revision must be a positive integer', requestId));
+      return;
+    }
+    try { await sendOk(reply, await bridge.readDraft(id, draftId, revision), requestId); }
+    catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof DraftNotFoundError) {
+        reply.statusCode = 404;
         await reply.send(fail(ErrorCodes.MESSAGE_NOT_FOUND, error.message, requestId));
         return;
       }

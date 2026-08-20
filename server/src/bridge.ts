@@ -37,6 +37,8 @@ import {
   type ContextMaskTurn,
 } from './context-masks.ts';
 import type { EventFrame, WireApprovalRequest, WireMessage, WireSession, WireSessionUsage } from './wire.ts';
+import { createSessionDraftExtension, SESSION_DRAFT_SETTINGS_TYPE, SESSION_DRAFT_TOOL } from './session-drafts/extension.ts';
+import { SessionDraftStore } from './session-drafts/store.ts';
 
 const RING_SIZE = 512;
 
@@ -149,9 +151,11 @@ export class PiBridge {
   private workspaceNames: Record<string, string> = {};
   private readonly workspaceNamesFile: string;
   private readonly options: BridgeOptions;
+  private readonly draftStore: SessionDraftStore;
 
   constructor(options: BridgeOptions) {
     this.options = options;
+    this.draftStore = new SessionDraftStore(join(serverHomeDir(), 'session-drafts'));
     // VERSION reads the pi package's package.json at runtime, which Bun-compiled
     // binaries can't resolve — fall back to our own version.
     this.version = VERSION && VERSION !== '0.0.0' ? `pi-code (pi ${VERSION})` : 'pi-code 0.1.0';
@@ -258,6 +262,14 @@ export class PiBridge {
             );
           });
         },
+      }, {
+        name: 'pi-code-session-draft',
+        hidden: true,
+        factory: createSessionDraftExtension({
+          sessionId: sessionManager.getSessionId(),
+          store: this.draftStore,
+          enabled: () => sessionDraftEnabled(sessionManager.getBranch()),
+        }),
       }],
     });
     await resourceLoader.reload();
@@ -269,7 +281,13 @@ export class PiBridge {
       resourceLoader,
       ...(model ? { model: model as never } : {}),
     });
+    this.applyDraftToolState(result.session, sessionDraftEnabled(sessionManager.getBranch()));
     return result.session;
+  }
+
+  private applyDraftToolState(session: AgentSession, enabled: boolean): void {
+    const active = session.getActiveToolNames().filter((name) => name !== SESSION_DRAFT_TOOL);
+    session.setActiveToolsByName(enabled ? [...active, SESSION_DRAFT_TOOL] : active);
   }
 
   /** Create a brand-new pi session rooted at cwd. */
@@ -907,6 +925,33 @@ export class PiBridge {
     return { ...turn, masked, can_toggle: true, unavailable_reason: undefined };
   }
 
+  async getDraftSettings(sessionId: string): Promise<{ enabled: boolean }> {
+    const entry = await this.openSession(sessionId);
+    return { enabled: sessionDraftEnabled(entry.session.sessionManager.getBranch()) };
+  }
+
+  async setDraftSettings(sessionId: string, enabled: boolean): Promise<{ enabled: boolean }> {
+    const entry = await this.openSession(sessionId);
+    if (entry.session.isStreaming || entry.runningTools.size > 0 || entry.approvals.size > 0) {
+      throw new SessionBusyError(sessionId);
+    }
+    const current = sessionDraftEnabled(entry.session.sessionManager.getBranch());
+    if (current === enabled) return { enabled };
+    entry.session.sessionManager.appendCustomEntry(SESSION_DRAFT_SETTINGS_TYPE, { version: 1, enabled });
+    this.applyDraftToolState(entry.session, enabled);
+    return { enabled };
+  }
+
+  async listDrafts(sessionId: string) {
+    await this.openSession(sessionId);
+    return this.draftStore.list(sessionId);
+  }
+
+  async readDraft(sessionId: string, draftId: string, revision?: number) {
+    await this.openSession(sessionId);
+    return this.draftStore.read(sessionId, draftId, revision);
+  }
+
   resolveApproval(sessionId: string, approvalId: string, approved: boolean, feedback?: string): { resolved: boolean } {
     const entry = this.sessions.get(sessionId);
     const record = entry?.approvals.get(approvalId);
@@ -983,6 +1028,16 @@ export class SessionNotFoundError extends Error {
   constructor(sessionId: string) {
     super(`Session not found: ${sessionId}`);
   }
+}
+
+function sessionDraftEnabled(branch: ReturnType<SessionManager['getBranch']>): boolean {
+  let enabled = false;
+  for (const entry of branch) {
+    if (entry.type !== 'custom' || entry.customType !== SESSION_DRAFT_SETTINGS_TYPE) continue;
+    const data = entry.data as { version?: unknown; enabled?: unknown };
+    if (data.version === 1 && typeof data.enabled === 'boolean') enabled = data.enabled;
+  }
+  return enabled;
 }
 
 export function workspaceIdFor(root: string): string {
