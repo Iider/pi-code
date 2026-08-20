@@ -7,6 +7,7 @@ import { createHash } from 'node:crypto';
 import {
   AgentSession,
   createAgentSession,
+  DefaultResourceLoader,
   getAgentDir,
   ModelRuntime,
   SessionManager,
@@ -25,6 +26,16 @@ import {
 } from './translate.ts';
 
 import { installApprovalGate, type ApprovalPolicy, type ApprovalRecord } from './approvals.ts';
+import {
+  CONTEXT_MASK_CUSTOM_TYPE,
+  ContextMaskCompactedError,
+  ContextMaskTargetError,
+  filterMaskedMessages,
+  findContextMaskTurn,
+  installContextMaskTransform,
+  listContextMaskTurns,
+  type ContextMaskTurn,
+} from './context-masks.ts';
 import type { EventFrame, WireApprovalRequest, WireMessage, WireSession, WireSessionUsage } from './wire.ts';
 
 const RING_SIZE = 512;
@@ -223,19 +234,51 @@ export class PiBridge {
     return SessionManager.create(cwd).getSessionDir();
   }
 
+  private async createManagedAgentSession(
+    cwd: string,
+    sessionManager: SessionManager,
+    model?: unknown,
+  ): Promise<AgentSession> {
+    const resourceLoader = new DefaultResourceLoader({
+      cwd,
+      agentDir: this.agentDir(),
+      extensionFactories: [{
+        name: 'pi-code-context-mask',
+        hidden: true,
+        factory: (pi) => {
+          pi.on('session_before_compact', (event) => {
+            const branch = sessionManager.getBranch();
+            event.preparation.messagesToSummarize = filterMaskedMessages(
+              event.preparation.messagesToSummarize,
+              branch,
+            );
+            event.preparation.turnPrefixMessages = filterMaskedMessages(
+              event.preparation.turnPrefixMessages,
+              branch,
+            );
+          });
+        },
+      }],
+    });
+    await resourceLoader.reload();
+    const result = await createAgentSession({
+      cwd,
+      agentDir: this.agentDir(),
+      modelRuntime: this.modelRuntime,
+      sessionManager,
+      resourceLoader,
+      ...(model ? { model: model as never } : {}),
+    });
+    return result.session;
+  }
+
   /** Create a brand-new pi session rooted at cwd. */
   async createSession(input: { cwd?: string; title?: string; model?: string }): Promise<BridgeSession> {
     const cwd = input.cwd && isAbsolute(input.cwd) && existsSync(input.cwd) ? input.cwd : this.options.workspaceRoot;
     const sessionManager = SessionManager.create(cwd, this.sessionDirFor(cwd));
     sessionManager.newSession();
     const model = input.model ? this.resolveModel(input.model) : undefined;
-    const { session } = await createAgentSession({
-      cwd,
-      agentDir: this.agentDir(),
-      modelRuntime: this.modelRuntime,
-      sessionManager,
-      ...(model ? { model: model as never } : {}),
-    });
+    const session = await this.createManagedAgentSession(cwd, sessionManager, model);
     const entry = this.registerSession(session, sessionManager.getSessionFile(), cwd);
     if (!isDefaultSessionTitle(input.title)) {
       entry.title = input.title?.trim();
@@ -252,12 +295,7 @@ export class PiBridge {
     if (!info) throw new SessionNotFoundError(sessionId);
     const sessionManager = SessionManager.open(info.file, this.sessionDirFor(info.cwd || this.options.workspaceRoot));
     const cwd = info.cwd || this.options.workspaceRoot;
-    const { session } = await createAgentSession({
-      cwd,
-      agentDir: this.agentDir(),
-      modelRuntime: this.modelRuntime,
-      sessionManager,
-    });
+    const session = await this.createManagedAgentSession(cwd, sessionManager);
     const entry = this.registerSession(session, info.file, cwd, {
       createdAt: info.createdAt,
       updatedAt: info.updatedAt,
@@ -335,12 +373,7 @@ export class PiBridge {
     title: string | undefined,
     childSessionKind: 'fork' | 'side_chat',
   ): Promise<BridgeSession> {
-    const { session } = await createAgentSession({
-      cwd: source.cwd,
-      agentDir: this.agentDir(),
-      modelRuntime: this.modelRuntime,
-      sessionManager,
-    });
+    const session = await this.createManagedAgentSession(source.cwd, sessionManager);
     const now = new Date();
     const entry = this.registerSession(session, sessionManager.getSessionFile(), source.cwd, {
       createdAt: now,
@@ -400,6 +433,8 @@ export class PiBridge {
       archived: meta.archived ?? false,
     };
     this.sessions.set(id, entry);
+
+    installContextMaskTransform(session);
 
     const originalUnsubscribe = session.subscribe((event) => this.handlePiEvent(entry, event));
     void originalUnsubscribe;
@@ -844,6 +879,32 @@ export class PiBridge {
     if (!targetId) throw new SessionNothingToUndoError(sessionId);
 
     await entry.session.navigateTree(targetId);
+  }
+
+  async listContextMasks(sessionId: string): Promise<ContextMaskTurn[]> {
+    const entry = await this.openSession(sessionId);
+    return listContextMaskTurns(entry.session.sessionManager.getBranch());
+  }
+
+  async setContextMask(sessionId: string, assistantEntryId: string, masked: boolean): Promise<ContextMaskTurn> {
+    const entry = await this.openSession(sessionId);
+    if (entry.session.isStreaming || entry.runningTools.size > 0 || entry.approvals.size > 0) {
+      throw new SessionBusyError(sessionId);
+    }
+    const branch = entry.session.sessionManager.getBranch();
+    const turn = findContextMaskTurn(branch, assistantEntryId);
+    if (!turn.can_toggle && turn.masked !== masked) {
+      throw new ContextMaskCompactedError('This turn is behind a compaction boundary and cannot be changed safely');
+    }
+    if (turn.masked === masked) return turn;
+
+    entry.session.sessionManager.appendCustomEntry(CONTEXT_MASK_CUSTOM_TYPE, {
+      version: 1,
+      userEntryId: turn.user_entry_id,
+      endEntryId: turn.end_entry_id,
+      masked,
+    });
+    return { ...turn, masked, can_toggle: true, unavailable_reason: undefined };
   }
 
   resolveApproval(sessionId: string, approvalId: string, approved: boolean, feedback?: string): { resolved: boolean } {

@@ -32,6 +32,8 @@ const QUOTE_COLD_LIMIT = 256;
 const quoteDrafts = loadQuoteDrafts();
 let preparedQuoteSubmission = null;
 let quoteRestoreTimer = null;
+let contextMaskSessionId = null;
+let contextMaskTurns = new Map();
 
 if (IS_TAURI_DESKTOP) document.documentElement.classList.add('pi-code-desktop');
 
@@ -149,6 +151,7 @@ function queueAdapterRefresh() {
     enhanceOAuthEntries();
     enhanceMessageForkActions();
     enhanceMessageQuoteActions();
+    enhanceContextMaskActions();
     enhanceQuoteComposer();
     enhanceQuotedUserMessages();
     enhanceArchivedSessionActions();
@@ -656,6 +659,116 @@ function quoteIcon() {
 
 function closeIcon() {
   return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m7 7 10 10M17 7 7 17"/></svg>';
+}
+
+// ---------------------------------------------------------------------------
+// Context turn masking
+// ---------------------------------------------------------------------------
+
+function enhanceContextMaskActions() {
+  const sessionId = currentSessionId();
+  if (!sessionId) return;
+  if (contextMaskSessionId !== sessionId) {
+    contextMaskSessionId = sessionId;
+    contextMaskTurns = new Map();
+    void loadContextMasks(sessionId);
+  }
+
+  for (const message of document.querySelectorAll('.a-msg[data-turn-id]')) {
+    const footer = message.querySelector(':scope > .a-msg-ft');
+    if (!footer) continue;
+    const entryId = message.dataset.turnId;
+    const turn = contextMaskTurns.get(entryId);
+    let button = footer.querySelector('.pi-context-mask');
+    if (!button) {
+      button = document.createElement('button');
+      button.type = 'button';
+      button.className = 'pi-context-mask';
+      button.dataset.entryId = entryId;
+      button.innerHTML = eyeOffIcon();
+      button.addEventListener('click', () => void toggleContextMask(button));
+      footer.append(button);
+    }
+    updateContextMaskButton(button, turn);
+    markContextMaskTurn(message, turn?.masked === true);
+  }
+}
+
+async function loadContextMasks(sessionId) {
+  try {
+    const data = await apiRequest(`/api/v1/sessions/${encodeURIComponent(sessionId)}/context-masks`);
+    if (contextMaskSessionId !== sessionId) return;
+    contextMaskTurns = new Map((data.items ?? []).map((turn) => [turn.assistant_entry_id, turn]));
+  } catch (error) {
+    if (contextMaskSessionId === sessionId) showContextMaskError(error instanceof Error ? error.message : String(error));
+  } finally {
+    queueAdapterRefresh();
+  }
+}
+
+function updateContextMaskButton(button, turn) {
+  const unavailable = !turn || !turn.can_toggle;
+  button.disabled = unavailable || button.classList.contains('is-loading');
+  button.classList.toggle('is-active', turn?.masked === true);
+  const label = !turn
+    ? localeText('正在读取上下文状态', 'Loading context state')
+    : !turn.can_toggle
+    ? localeText('此轮已进入上下文摘要，暂不能切换状态', 'This turn is already in a context summary and cannot be changed yet')
+    : turn.masked
+      ? localeText('恢复此轮到后续上下文', 'Restore this turn to future context')
+      : localeText('从后续上下文屏蔽此轮', 'Hide this turn from future context');
+  button.setAttribute('aria-label', label);
+  button.title = label;
+  button.setAttribute('aria-pressed', turn?.masked === true ? 'true' : 'false');
+}
+
+async function toggleContextMask(button) {
+  const sessionId = currentSessionId();
+  const entryId = button.dataset.entryId;
+  const turn = contextMaskTurns.get(entryId);
+  if (!sessionId || !entryId || !turn || button.disabled) return;
+  if (!turn.masked && turn.has_tools && !confirm(localeText(
+    '这只会从模型后续上下文移除此轮，不会撤销该轮产生的文件、命令或外部副作用。继续吗？',
+    'This only removes the turn from future model context. It does not undo files, commands, or external side effects. Continue?',
+  ))) return;
+
+  button.classList.add('is-loading');
+  button.disabled = true;
+  try {
+    const updated = await apiRequest(
+      `/api/v1/sessions/${encodeURIComponent(sessionId)}/context-masks/${encodeURIComponent(entryId)}`,
+      { method: 'PUT', body: JSON.stringify({ masked: !turn.masked }) },
+    );
+    contextMaskTurns.set(entryId, updated);
+  } catch (error) {
+    showContextMaskError(error instanceof Error ? error.message : String(error));
+  } finally {
+    button.classList.remove('is-loading');
+    queueAdapterRefresh();
+  }
+}
+
+function markContextMaskTurn(message, masked) {
+  message.classList.toggle('pi-context-masked-turn', masked);
+  let sibling = message.previousElementSibling;
+  while (sibling && !sibling.matches('.a-msg[data-turn-id]')) {
+    sibling.classList.toggle('pi-context-masked-turn', masked);
+    sibling = sibling.previousElementSibling;
+  }
+}
+
+function showContextMaskError(message) {
+  document.querySelector('.pi-context-mask-toast')?.remove();
+  const toast = document.createElement('div');
+  toast.className = 'pi-fork-toast pi-context-mask-toast';
+  toast.setAttribute('role', 'alert');
+  toast.textContent = localeText(`上下文屏蔽失败：${message}`, `Could not change context: ${message}`);
+  document.body.appendChild(toast);
+  setTimeout(() => toast.remove(), 5000);
+}
+
+function eyeOffIcon() {
+  return '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m3 3 18 18M10.6 10.7a2 2 0 0 0 2.7 2.7M9.9 4.3A10.8 10.8 0 0 1 12 4c5.5 0 9 6 9 6a16 16 0 0 1-2.1 2.8M6.5 6.5C4.3 8 3 10 3 10s3.5 6 9 6c1 0 2-.2 2.9-.5"/></svg>';
 }
 
 function enhanceMessageForkActions() {

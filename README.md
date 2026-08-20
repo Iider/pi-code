@@ -137,6 +137,8 @@ Notes:
   `thinking.delta`, `tool.call.started`, `tool.result`, `turn.ended`, …)
   which the WebUI's own client-side projector consumes
 - Prompts, steering while busy, abort, compaction
+- Per-turn context masking: conversation history remains visible while selected complete turns are
+  excluded from provider requests and future compaction input
 - Tool approvals: pi has no permission system, so the bridge chains a
   `beforeToolCall` gate (keeping extension hooks intact) and surfaces pending
   approvals as `event.approval.requested`; approve/reject from the WebUI
@@ -175,6 +177,8 @@ server/vendor/protocol/  kimi-code's protocol package (reference schemas)
   三阶段边界、接口与验收标准。
 - [Agent 回复引用开发方案](docs/message-quoting-plan.md)：引用 chip、上下文短指纹、压缩历史
   摘录和分阶段验收边界。
+- [会话轮次上下文屏蔽开发方案](docs/context-turn-masking-plan.md)：界面保留历史、模型上下文
+  按完整轮次过滤，以及 compaction 边界和验收标准。
 
 ## Attribution & license
 

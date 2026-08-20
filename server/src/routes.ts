@@ -16,6 +16,7 @@ import {
   SessionNotFoundError,
   SessionNotPersistedError,
 } from './bridge.ts';
+import { ContextMaskCompactedError, ContextMaskTargetError } from './context-masks.ts';
 import { ErrorCodes, fail, newRequestId, ok } from './envelope.ts';
 import { checkToken } from './token.ts';
 import { ModelConfigurationService } from './models/configuration-service.ts';
@@ -631,6 +632,49 @@ export function buildApp(ctx: RouteContext): FastifyInstance {
       await sendOk(reply, snapshot.messages, requestId);
     } catch (error) {
       if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      throw error;
+    }
+  });
+
+  app.get('/api/v1/sessions/:id/context-masks', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id } = req.params as { id: string };
+    try {
+      await sendOk(reply, { items: await bridge.listContextMasks(id) }, requestId);
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      throw error;
+    }
+  });
+
+  app.put('/api/v1/sessions/:id/context-masks/:entryId', async (req, reply) => {
+    const requestId = newRequestId();
+    const { id, entryId } = req.params as { id: string; entryId: string };
+    const { masked } = (req.body ?? {}) as { masked?: unknown };
+    if (typeof masked !== 'boolean') {
+      reply.statusCode = 400;
+      await reply.send(fail(ErrorCodes.VALIDATION, 'masked must be a boolean', requestId));
+      return;
+    }
+    try {
+      await sendOk(reply, await bridge.setContextMask(id, entryId, masked), requestId);
+    } catch (error) {
+      if (error instanceof SessionNotFoundError) return notFoundSession(reply, requestId);
+      if (error instanceof SessionBusyError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.SESSION_BUSY, 'Session is busy and its context cannot be changed', requestId));
+        return;
+      }
+      if (error instanceof ContextMaskCompactedError) {
+        reply.statusCode = 409;
+        await reply.send(fail(ErrorCodes.VALIDATION, error.message, requestId));
+        return;
+      }
+      if (error instanceof ContextMaskTargetError) {
+        reply.statusCode = 400;
+        await reply.send(fail(ErrorCodes.MESSAGE_NOT_FOUND, error.message, requestId));
+        return;
+      }
       throw error;
     }
   });

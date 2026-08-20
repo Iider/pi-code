@@ -168,6 +168,63 @@
   animation: pi-code-fork-pulse 0.8s ease-in-out infinite alternate;
 }
 
+.pi-context-mask {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  min-height: 22px;
+  padding: 2px 5px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: none;
+  color: var(--color-text-faint);
+  cursor: pointer;
+  opacity: 0.7;
+  transition: opacity var(--duration-fast) var(--ease-out), color var(--duration-fast) var(--ease-out), background var(--duration-fast) var(--ease-out);
+}
+
+.pi-context-mask svg {
+  width: var(--p-ic-md);
+  height: var(--p-ic-md);
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.pi-context-mask:hover:not(:disabled),
+.pi-context-mask.is-active {
+  background: var(--color-hover);
+  color: var(--color-text-muted);
+  opacity: 1;
+}
+
+.pi-context-mask:focus-visible {
+  outline: none;
+  box-shadow: var(--p-focus-ring);
+}
+
+.pi-context-mask:disabled {
+  cursor: not-allowed;
+  opacity: 0.3;
+}
+
+.pi-context-mask.is-loading svg {
+  animation: pi-code-fork-pulse 0.8s ease-in-out infinite alternate;
+}
+
+.pi-context-masked-turn {
+  opacity: 0.42;
+  transition: opacity var(--duration-base) var(--ease-out);
+}
+
+.pi-context-masked-turn:hover,
+.pi-context-masked-turn:focus-within {
+  opacity: 1;
+}
+
 /* Quote keeps the assistant-footer action family, but uses a speech/reference
  * glyph so it cannot be confused with fork or copy. */
 .pi-quote-from-message {
